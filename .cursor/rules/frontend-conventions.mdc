@@ -1,0 +1,79 @@
+---
+description: Frontend conventions - Next.js, wallet connection, UI patterns
+globs: frontend/**/*.ts,frontend/**/*.tsx
+alwaysApply: false
+---
+
+# Frontend Conventions
+
+## File Structure
+
+```
+frontend/src/
+├── app/
+│   ├── globals.css    # Tailwind imports, CSS variables
+│   ├── layout.tsx     # Root layout, Geist fonts
+│   └── page.tsx       # Single-page app (3 views)
+└── lib/
+    ├── api.ts         # Typed fetch wrappers for backend
+    ├── wallet.ts      # MetaMask + SIWE signing
+    └── utils.ts       # cn() class merger
+```
+
+## Three Views in page.tsx
+
+1. **Landing** (no wallet): "Connect Wallet" button
+2. **Setup** (wallet connected, no agent): Agent name input + Deploy button
+3. **Dashboard** (agent deployed): Task input, status display, lifecycle controls
+
+View state determined by: `!address` → landing, `!agent` → setup, else → dashboard
+
+## Wallet Connection (lib/wallet.ts)
+
+```typescript
+// Uses ethers v6 BrowserProvider
+const provider = new BrowserProvider(window.ethereum);
+const signer = await provider.getSigner();
+
+// SIWE message via siwe v3
+const siweMessage = new SiweMessage({
+  domain: window.location.host,
+  address: await signer.getAddress(),
+  statement: "Sign in to CLAWT",
+  uri: window.location.origin,
+  version: "1",
+  chainId: 1,
+  nonce: nonceFromBackend,
+});
+```
+
+## Session Storage
+
+- Key: `clawt-session`
+- Value: `{ token: string, address: string }`
+- Restored on page load, cleared on disconnect
+
+## API Calls (lib/api.ts)
+
+All functions accept `token` parameter for auth header:
+
+```typescript
+fetchNonce()
+verifyAuth(message, signature)
+deployAgent(name, token)
+getAgentInfo(token)
+submitTask(task, token)
+stopAgent(token) / startAgent(token) / terminateAgent(token)
+```
+
+## Styling
+
+- Tailwind CSS v4 with CSS variables for theming
+- `cn()` utility combines `clsx` + `tailwind-merge`
+- Geist Sans and Geist Mono fonts via next/font
+
+## Environment
+
+```
+NEXT_PUBLIC_BACKEND_URL=http://<VPS_IP>
+```

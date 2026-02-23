@@ -1,0 +1,64 @@
+---
+description: Code style - TypeScript, ESM, Prettier, tooling conventions
+alwaysApply: true
+---
+
+# Code Style
+
+## TypeScript
+
+- **Strict mode** enabled in all workspaces
+- **ESM** (`"type": "module"`) - use `.js` extension in imports even for `.ts` files
+- **Target**: ES2022 (backend/agent), ES2017 (frontend)
+- **No build step** for backend/agent - run directly with `tsx`
+
+```typescript
+// Correct import (note .js extension)
+import { signMessage } from "./wallet.js";
+```
+
+## Prettier Config
+
+```json
+{
+  "semi": true,
+  "singleQuote": false,
+  "trailingComma": "es5",
+  "printWidth": 100,
+  "tabWidth": 2
+}
+```
+
+## Preferred Libraries
+
+| Purpose | Library |
+|---------|---------|
+| Validation | `zod` |
+| Crypto/Wallet | `viem`, `@scure/bip39` |
+| Auth | `siwe` (v2 backend, v3 frontend) |
+| HTTP client | `fetch` (native) |
+| Database | `better-sqlite3` |
+| Solidity | **Foundry** (not Hardhat) |
+
+## Naming
+
+- Files: `kebab-case.ts`
+- Functions/variables: `camelCase`
+- Types/interfaces: `PascalCase`
+- Constants: `SCREAMING_SNAKE_CASE`
+- Project name: **CLAWT** (always uppercase in UI)
+
+## Error Handling
+
+```typescript
+// Always wrap with specific error context
+try {
+  await operation();
+} catch (err) {
+  throw new Error(`Failed to ${action}: ${err instanceof Error ? err.message : err}`);
+}
+```
+
+## No Comments for Obvious Code
+
+Only add comments for non-obvious intent, trade-offs, or constraints. Avoid narrating what code does.

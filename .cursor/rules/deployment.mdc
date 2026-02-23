@@ -1,0 +1,87 @@
+---
+description: Deployment conventions - VPS, Docker, Vercel, infrastructure
+globs: nginx/**,**/Dockerfile,**/.env*,**/docker-compose*
+alwaysApply: false
+---
+
+# Deployment
+
+## VPS (Backend)
+
+- **IP**: `<VPS_IP>`
+- **SSH**: `<SSH_USER>@<VPS_IP>` (password auth)
+- **Code path**: `/opt/clawt/`
+- **PM2 process**: `clawt-backend`
+- **Port**: Backend runs on 4000, nginx proxies 80 → 4000
+
+### Common Commands
+
+VPS_PASSWORD is stored in the project root `.env` file (gitignored). Source it before running commands.
+
+```bash
+# Load password from .env
+source .env
+
+# SSH into VPS
+sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no <SSH_USER>@<VPS_IP>
+
+# Restart backend
+sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no <SSH_USER>@<VPS_IP> 'pm2 restart clawt-backend'
+
+# View logs
+sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no <SSH_USER>@<VPS_IP> 'pm2 logs clawt-backend --lines 50'
+
+# Sync code from local
+sshpass -p "$VPS_PASSWORD" rsync -avz --exclude='node_modules' --exclude='.next' --exclude='data' \
+  -e 'ssh -o StrictHostKeyChecking=no' \
+  backend/ <SSH_USER>@<VPS_IP>:/opt/clawt/backend/
+```
+
+## Docker (Agent)
+
+- **Image**: `clawt-agent:latest`
+- **Base**: `node:20-slim` (linux/amd64)
+- **Includes**: Python3, pip, git, curl (for skill execution)
+- **Build**: `docker build -t clawt-agent:latest .` in `agent/` directory
+
+## Vercel (Frontend)
+
+- Deployed with SSO protection (team-level)
+- Use Vercel MCP `get_access_to_vercel_url` tool to create shareable links
+- Shareable URLs expire in 23 hours
+- Project linked in `frontend/.vercel/project.json`
+
+### Deploy Frontend
+
+```bash
+cd frontend && vercel --prod --yes
+```
+
+## Nginx Config
+
+Located at `/etc/nginx/sites-available/skillsseal` on VPS (symlinked to sites-enabled).
+
+```nginx
+server {
+    listen 80;
+    server_name <VPS_IP>;
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:4000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+## Backend .env Critical Variables
+
+```
+TOKEN_SECRET=<random-64-char-hex>
+FRONTEND_URL=https://<vercel-url>
+EIGENCOMPUTE_EMAIL=<ecloud-login>
+EIGENCOMPUTE_PASSWORD=<ecloud-password>
+DOCKER_IMAGE=clawt/agent:latest
+PORT=4000
+```

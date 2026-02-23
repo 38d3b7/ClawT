@@ -1,0 +1,59 @@
+---
+description: Core project context for CLAWT - verifiable AI agent platform
+alwaysApply: true
+---
+
+# CLAWT Project Overview
+
+CLAWT is a **verifiable AI agent platform on EigenCompute**. Users sign in with Ethereum wallets (MetaMask + SIWE), deploy personal AI agents into Trusted Execution Environments (TEEs), and submit natural-language tasks. Every agent response is cryptographically signed by the agent's TEE wallet.
+
+## Architecture
+
+```
+Frontend (Vercel)  →  Backend (VPS)  →  Agent (EigenCompute TEE)
+   Next.js 16           Express           Express + LLM loop
+   React 19             SQLite            HD Wallet (viem)
+   ethers v6            ecloud CLI        Skill execution
+```
+
+## Workspace Layout
+
+```
+ClawT/
+├── agent/       # TEE agent (Docker, runs on EigenCompute)
+├── backend/     # Orchestration API (runs on VPS)
+├── frontend/    # Web UI (deployed to Vercel)
+├── nginx/       # Reverse proxy config
+└── package.json # npm workspaces root
+```
+
+## Deployment URLs
+
+- **Backend API**: `http://<VPS_IP>` (nginx proxy to port 4000)
+- **Frontend**: Vercel (has SSO protection - use Vercel MCP `get_access_to_vercel_url` for shareable links)
+- **VPS code path**: `/opt/clawt/`
+- **PM2 process**: `clawt-backend`
+
+## Key Technologies
+
+| Layer | Stack |
+|-------|-------|
+| Frontend | Next.js 16, React 19, Tailwind v4, ethers v6, siwe v3 |
+| Backend | Express, better-sqlite3, siwe v2, viem, zod, @scure/bip39 |
+| Agent | Express, viem (wallet), gray-matter (skills), EigenAI API |
+| Runtime | Node 20, TypeScript strict, ESM, tsx (no build step) |
+
+## Auth Flow
+
+1. Frontend requests nonce from `/api/auth/nonce`
+2. User signs SIWE message with MetaMask
+3. Backend verifies signature, returns HMAC-SHA256 session token (24h TTL)
+4. All requests use `Authorization: Bearer <token>`
+
+## Important Conventions
+
+- Project name is **CLAWT** everywhere (not SkillsSeal)
+- One agent per user (enforced at deploy)
+- Agent mnemonic generated at deploy time, injected as env var, never stored in DB
+- All agent responses are signed by the TEE wallet
+- Use Foundry for Solidity (not Hardhat)

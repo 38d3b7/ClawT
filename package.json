@@ -1,0 +1,18 @@
+{
+  "name": "clawt",
+  "version": "0.1.0",
+  "description": "CLAWT — Verifiable agent platform on EigenCompute",
+  "private": true,
+  "type": "module",
+  "workspaces": ["agent", "backend", "frontend"],
+  "scripts": {
+    "typecheck": "npm run typecheck -w backend -w agent -w frontend",
+    "lint": "npm run lint -w backend -w agent && npm run lint -w frontend",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "npm run test -w backend -w agent"
+  },
+  "devDependencies": {
+    "prettier": "^3.8.1"
+  }
+}

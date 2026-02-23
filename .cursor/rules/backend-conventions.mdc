@@ -1,0 +1,55 @@
+---
+description: Backend conventions - Express API, auth, EigenCompute integration
+globs: backend/**/*.ts
+alwaysApply: false
+---
+
+# Backend Conventions
+
+## File Structure
+
+- `src/index.ts` - Express server, all REST endpoints
+- `src/auth.ts` - SIWE nonce generation, verification, HMAC session tokens
+- `src/db.ts` - SQLite via better-sqlite3 (users, agents tables)
+- `src/eigencompute.ts` - `ecloud` CLI wrapper for TEE deployment
+
+## API Endpoints
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET | `/api/auth/nonce` | No | Generate SIWE nonce (5min TTL) |
+| POST | `/api/auth/verify` | No | Verify SIWE, return session token |
+| POST | `/api/agents/deploy` | Yes | Deploy agent to EigenCompute |
+| GET | `/api/agents/info` | Yes | Get user's agent status |
+| POST | `/api/agents/stop` | Yes | Stop agent container |
+| POST | `/api/agents/start` | Yes | Start stopped agent |
+| POST | `/api/agents/terminate` | Yes | Remove agent permanently |
+| POST | `/api/agents/task` | Yes | Proxy task to agent |
+| GET | `/api/agents/skills` | Yes | Proxy skill list from agent |
+| GET | `/api/agents/history` | Yes | Proxy audit log from agent |
+
+## Auth Pattern
+
+```typescript
+// Session token format: address:expiresAt:hmac
+// HMAC = sha256(address:expiresAt, TOKEN_SECRET)
+// Timing-safe comparison for verification
+```
+
+## Key Patterns
+
+- **One agent per user**: Check `db.getAgent(userAddress)` before deploy
+- **Mnemonic injection**: Generate via `@scure/bip39`, pass to ecloud as env var, never store
+- **Rate limiting**: Auth endpoints 10/min, deploy 10/hour
+- **Zod validation**: All request bodies validated with schemas
+- **ecloud name**: `clawt-${userAddress.slice(2, 10)}`
+
+## Environment Variables
+
+```
+TOKEN_SECRET        # HMAC signing secret
+FRONTEND_URL        # CORS allowed origin
+EIGENCOMPUTE_EMAIL  # ecloud CLI auth
+EIGENCOMPUTE_PASSWORD
+DOCKER_IMAGE        # Agent image ref (clawt/agent:latest)
+```

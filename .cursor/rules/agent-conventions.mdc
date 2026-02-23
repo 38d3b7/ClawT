@@ -1,0 +1,64 @@
+---
+description: Agent conventions - LLM loop, wallet signing, skill execution, security
+globs: agent/**/*.ts
+alwaysApply: false
+---
+
+# Agent Conventions
+
+## File Structure
+
+- `src/index.ts` - Express server with `/task`, `/skills`, `/history`, `/whoami`, `/health`
+- `src/router.ts` - Agentic LLM loop with tool calling (max 8 turns)
+- `src/executor.ts` - Skill execution engine (clone from GitHub, run manifest)
+- `src/wallet.ts` - HD wallet from mnemonic via `viem/accounts`
+- `src/security.ts` - Input validation, prompt injection detection, output sanitization
+- `src/memory.ts` - Key-value store with search (4 categories)
+- `src/heartbeat.ts` - Scheduler for recurring tasks
+- `src/graph.ts` - Skill graph navigation with wikilinks
+- `src/registry.ts` - Remote skill registry client
+- `src/logger.ts` - Signed audit log entries
+
+## Agentic Loop (router.ts)
+
+```
+User task → LLM (EigenAI API) → Tool calls → Execute → LLM → ... → Final response
+                                    ↓
+                        Tools: select_skills, explore_skills,
+                               memory_*, schedule_task
+```
+
+- Max 8 turns per request
+- Every response signed by agent wallet
+- Grant auth via pre-signed message or refresh flow
+
+## Wallet Signing
+
+All responses include `agentSignature` and `agentAddress`. Use `signMessage` from `src/wallet.ts`.
+
+## Security (security.ts)
+
+- **Input**: Max 100KB, null-byte rejection, prompt injection scoring (0-1 risk)
+- **Output**: Redact private keys (64-char hex), API keys, BIP-39 mnemonics
+- **Sessions**: Alphanumeric + hyphens/underscores, max 64 chars
+
+## Skill Execution
+
+- Skills cloned to `/tmp/clawt/` from GitHub registry
+- Run with minimal PATH-only env + explicit `requires_env` vars
+- 30-second timeout, 1MB output buffer
+- Skill ID regex: `^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$`
+
+## Memory Categories
+
+`transactions`, `contracts`, `preferences`, `context` - word-overlap search with recency boost.
+
+## Environment Variables (injected at deploy)
+
+```
+MNEMONIC            # 12-word BIP-39 seed (generated per deploy)
+BACKEND_URL         # For memory persistence
+SKILL_REGISTRY_URL  # Skills JSON endpoint
+EIGENAI_GRANT_API   # LLM inference endpoint
+AGENT_MODEL         # Default: gpt-oss-120b-f16
+```

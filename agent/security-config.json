@@ -1,0 +1,67 @@
+{
+  "forbiddenCodePatterns": [
+    "\\beval\\s*\\(",
+    "\\bnew\\s+Function\\s*\\(",
+    "\\brequire\\s*\\(\\s*['\"]child_process['\"]\\s*\\)",
+    "\\bimport\\s+.*from\\s+['\"]child_process['\"]",
+    "\\bprocess\\.env\\.MNEMONIC\\b",
+    "\\bprocess\\.exit\\b",
+    "\\.listen\\s*\\(\\s*\\d",
+    "\\bnet\\.createServer\\b",
+    "\\bhttp\\.createServer\\b",
+    "\\brequire\\s*\\(\\s*['\"]fs['\"]\\s*\\)",
+    "\\bimport\\s+.*from\\s+['\"]fs['\"]",
+    "\\bglobalThis\\b",
+    "\\bprocess\\.binding\\b"
+  ],
+  "secretPatterns": [
+    "0x[a-fA-F0-9]{64}",
+    "\\b(sk-[a-zA-Z0-9]{20,})\\b",
+    "\\b(ghp_[a-zA-Z0-9]{36,})\\b",
+    "\\b(gho_[a-zA-Z0-9]{36,})\\b",
+    "\\b(AKIA[0-9A-Z]{16})\\b",
+    "\\b(glpat-[a-zA-Z0-9_-]{20,})\\b",
+    "\\b(xox[baprs]-[a-zA-Z0-9-]+)\\b",
+    "-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----",
+    "\\b(sk_live_[a-zA-Z0-9]{20,})\\b",
+    "\\b(rk_live_[a-zA-Z0-9]{20,})\\b",
+    "\\b(SG\\.[a-zA-Z0-9_-]{22}\\.[a-zA-Z0-9_-]{43})\\b",
+    "\\b(AC[a-f0-9]{32})\\b",
+    "\\beyJ[A-Za-z0-9-_]+\\.eyJ[A-Za-z0-9-_]+\\.[A-Za-z0-9-_]+\\b",
+    "\\b(npm_[a-zA-Z0-9]{36})\\b",
+    "\\b(pypi-[a-zA-Z0-9]{60,})\\b"
+  ],
+  "safePackages": [
+    "axios", "cheerio", "lodash", "date-fns", "zod", "node-fetch",
+    "csv-parse", "json5", "yaml", "marked", "mathjs", "uuid",
+    "ethers", "bignumber.js", "decimal.js"
+  ],
+  "injectionPatterns": [
+    "ignore previous instructions",
+    "ignore all previous",
+    "disregard previous",
+    "forget your instructions",
+    "new instructions:",
+    "system prompt:",
+    "you are now",
+    "act as if",
+    "pretend you are",
+    "override your",
+    "ignore your training",
+    "bypass your",
+    "[system]",
+    "<|system|>",
+    "```system",
+    "IMPORTANT: from now on",
+    "\\[INST\\]",
+    "\\[/INST\\]"
+  ],
+  "riskScores": {
+    "create_skill": 1,
+    "write_file": 2,
+    "synthesize_tool": 3,
+    "install_package": 4
+  },
+  "toolTimeoutMs": 10000,
+  "maxOutputLength": 50000
+}

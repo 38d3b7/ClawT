@@ -1,0 +1,30 @@
+node_modules/
+dist/
+.next/
+.env
+.env.*
+!.env.example
+*.db
+*.db-journal
+*.db-wal
+data/
+.DS_Store
+.turbo
+
+# TypeScript build cache
+*.tsbuildinfo
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+
+# Credentials (defense in depth)
+*.pem
+*.key
+*.p12

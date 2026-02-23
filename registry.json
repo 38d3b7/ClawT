@@ -1,0 +1,361 @@
+{
+  "skills": [
+    {
+      "id": "github",
+      "description": "Interact with GitHub using the gh CLI. Use gh issue, gh pr, gh run, and gh api for issues, PRs, CI runs, and advanced queries.",
+      "version": "1.0.0",
+      "author": "clawhub",
+      "contentHash": "sha256:d7a201425277624752c7c67fa988e180a4ac113093fa34ec80076bac6a059509",
+      "requiresEnv": [],
+      "hasExecutionManifest": false
+    },
+    {
+      "id": "humanize-ai-text",
+      "description": "Detects AI-generated text patterns and rewrites content to sound more natural and human-written. Useful for editing drafts, improving readability, and reducing robotic tone in AI-assisted writing.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:3961d03564d1951148feea21e54cc47a4bc50c27ad0c628a40bf9b0e2835a988",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "nano-banana-pro",
+      "description": "Generate and edit images with Google Gemini 3 Pro Image API. Supports text-to-image and image-to-image editing at 1K/2K/4K resolutions.",
+      "version": "1.0.1",
+      "author": "clawhub",
+      "contentHash": "sha256:39d28084d82801c580855fa37f0081dafb48db39c4edd253d8ccb3ce5ca5c7e3",
+      "requiresEnv": [
+        "GEMINI_API_KEY"
+      ],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "ontology",
+      "description": "Typed knowledge graph for structured agent memory. Create/query entities (Person, Project, Task, Event, Document), link related objects, enforce constraints. Local filesystem storage \u2014 not TEE-compatible.",
+      "version": "0.1.2",
+      "author": "clawhub",
+      "contentHash": "sha256:59fd1ea5db41399164fee181dcbc51310ac20683c25c135a298be5c1dcc1d8ed",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-aave-best-borrow",
+      "description": "Find the lowest Aave V3 borrow APR across all chains for a given asset. Costs $0.01 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:137f2e09962665254a1c5a67e35c492a8abb4e528e344ca63250350e5323dcd8",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-aave-best-yield",
+      "description": "Find the best Aave V3 supply APY across all chains for a given asset. Costs $0.01 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:3f0ab3c72c002238e7130763a907f349de7df4034ee7962a6238dac3fcbb66b3",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-aave-borrow",
+      "description": "Build an Aave V3 borrow transaction. Returns ready-to-sign transaction data. Costs $0.01 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:88061aa04d255012dc31680faf6addd5e4a6af383c18bb6dea364af5ad614366",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-aave-health-factor",
+      "description": "Get health factor and liquidation risk for an Aave V3 position. Costs $0.005 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:7e24773d651613b902efdb6e124ab197c01a730dea5b714564b8847cab93e850",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-aave-markets",
+      "description": "Get overview of all Aave V3 markets with TVL and rates. Costs $0.005 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:988b3ed0e8307572f1e2aedb55c4372ded3d7a257ffbcc8ac98e2aae9e6e2d07",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-aave-repay",
+      "description": "Build an Aave V3 repay transaction. Returns ready-to-sign transaction data. Costs $0.01 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:c700b08a839b2a0adbaf8e339527496742ec4f39c98d1e09978d83765470c1c9",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-aave-supply",
+      "description": "Build an Aave V3 supply (deposit) transaction. Returns ready-to-sign transaction data. Costs $0.01 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:fb36afe5678fa224d7f449fc2c6d32eeec2b728f29f43178604e6f7e46de1a9c",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-aave-user-positions",
+      "description": "Get all Aave V3 positions for a wallet address across chains. Costs $0.01 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:dce2271f84bf29ee7f906838484c38efc24c1558d7aed2036295620b9c876ad4",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-aave-withdraw",
+      "description": "Build an Aave V3 withdraw transaction. Returns ready-to-sign transaction data. Costs $0.01 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:1b5b01b1a56538b57152e1a9ecb08b50c8c27c22e71d16d3491579c3b7f907f4",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-crypto-price",
+      "description": "Get real-time crypto prices for any CoinGecko-listed coin. Returns price in USD/EUR/GBP/JPY with optional 24h volume and market cap data. Costs $0.015.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:0305a594c3424210f09d7f2c489fdae6ef5c7478d933f4a21636151aa921e0a4",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-ens-check",
+      "description": "Check ENS name availability and registration price. Free endpoint - no x402 payment required.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:0c789c0b36d2bc96dc66b93b1924f6533846f7697897235e56cce9714e3e4831",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-ens-commit",
+      "description": "Build a commit transaction for ENS name registration (step 1 of 2-step registration process). Free endpoint - no x402 payment required.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:65f1c26a54bb79e3b482eafa5e4549ce059d3b024a4015b9cf7405dd384af401",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-ens-lookup",
+      "description": "Resolve ENS names to Ethereum addresses and perform reverse lookups. Optionally resolve avatar and text records. Costs $0.001 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:a34a39cddbabf3c7acabfd1f98672406aee9bddf4498cb714c8015eae5f5b1dc",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-ens-register",
+      "description": "Build a register transaction for ENS name registration (step 2 of 2-step process). Must wait at least 1 minute after commit. Free endpoint.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:cb41280fdde45920ec5a3d6b409f34de25186126ca4d80852be0e3b00132ca02",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-ens-renew",
+      "description": "Build a renewal transaction for an existing ENS name. Free endpoint - no x402 payment required.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:43ff25a38e0b2b8cb3f66f6fbb89c33fcfdc42b42342e4c48cee891b422c36e0",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-llm-anthropic",
+      "description": "Anthropic Claude chat completions proxy. Access Claude 3.5 Haiku and Claude 3 Haiku models via pay-per-call. Costs $0.01 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:7fb0bbd623b42ea36c34008daf8fef22fc05cb98cf77fb7dfad5736572190a7f",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-llm-google",
+      "description": "Google Gemini chat completions proxy. Access Gemini 2.0 Flash and Flash Lite models via pay-per-call. Costs $0.01 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:ed7715414ceae0fa877c210bbc45e206a1b369177a68e3705b2582dc16a963aa",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-llm-openai",
+      "description": "OpenAI chat completions proxy. Access GPT-4o mini and GPT-3.5 Turbo models via pay-per-call. Costs $0.01 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:81a68a01b685daa23e713a71d7139185d2be58109efae14dcde3928acf0ce977",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-onchain-token-data",
+      "description": "Get comprehensive on-chain token data including price, supply, FDV, market cap, and top pools. Powered by GeckoTerminal. Costs $0.015 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:506c2a600eb7dce18ccaed5461cad374171f84674453aaee241093749446e9d3",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-onchain-token-price",
+      "description": "Get on-chain token price by contract address and network. Powered by GeckoTerminal for DEX-based pricing. Costs $0.015 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:de09a4810955ef0263261fbaeb52ceff4f8a3758c5c5b5a60cd345ba104c6c4a",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-search-pools",
+      "description": "Search liquidity pools by token name, symbol, or contract address across multiple networks. Costs $0.015 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:eb8146829ec7fa378c313d4c880ce8944520cb60bb29cf779e3b5bd5f57685fd",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-swap-build",
+      "description": "Build a DEX swap transaction for signing via Li.Fi aggregator. Returns ready-to-sign transaction data. Costs $0.01 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:2ea8c6452a023682ea7a193e147da8a6644830c711700f91765bd892c8f52b65",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-swap-quote",
+      "description": "Get a DEX swap price quote across chains via Li.Fi aggregator. Supports same-chain and cross-chain swaps. Costs $0.005 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:26e8f68666d6ea944588a1ed65a38c163226845f5c3eef4dc40ebe63da29b8af",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-token-balance",
+      "description": "Check wallet token balance on any supported chain including Ethereum, Base, Polygon, Arbitrum, Optimism, BSC, and Avalanche. Costs $0.005 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:156c29803b661020f857947bf72a49f0efefc4d559b04d1dd4ae51bed8fcd2b2",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-trending-pools",
+      "description": "Get trending liquidity pools on a network sorted by trading activity. Costs $0.015 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:120122ebc97286b4e0fbfad8dd81d0ba57eea316dbaf41a5ca3f93ba7ad90610",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-twitter-post",
+      "description": "Post a tweet using your OAuth access token. Supports replies and quote tweets. Costs $0.015 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:313489d38b3fbd3ec234c2a174ad559ce9eaa483dd9694cc6881ca75aff0e10a",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-twitter-search",
+      "description": "Search recent tweets (last 7 days) on X/Twitter. Supports advanced query syntax. Costs $0.08 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:61e328fdf83ebe52d29b5e521d7e0ccfaa08dfc4e95bdb48947c1008d0f01fe5",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-twitter-tweet-lookup",
+      "description": "Look up tweets by ID with metrics and author info. Supports up to 10 tweets per call. Costs $0.02 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:59b66da0099f2ab236311baec690937648e007c19fee21ff08139c5131c360bb",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-twitter-user-lookup",
+      "description": "Look up X/Twitter user by username or user ID. Returns profile info, follower counts, and metrics. Costs $0.02 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:d34093f8e39c26bce54082b5cb5ba3d9350d039410782598e66b771a2b7da133",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-twitter-user-tweets",
+      "description": "Get a user's recent tweets by user ID. Can exclude replies and retweets. Costs $0.08 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:09df9cabe1331905c9267892aa7db5a2024659814e2a8351799fd436250031aa",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-wallet-validator",
+      "description": "Validate cryptocurrency wallet addresses with checksum verification for Ethereum, Bitcoin, and Solana networks. Costs $0.0005 per call.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:7aed6037003c282b61da7840b80d08f488688e54798e2def990eadac78e9656b",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "summarize",
+      "description": "Summarize URLs, files, PDFs, images, audio, and YouTube links using the summarize CLI. Requires external binary \u2014 not TEE-compatible.",
+      "version": "1.0.0",
+      "author": "clawhub",
+      "contentHash": "sha256:a2589d18f23df640b0bd4df82957ffba471d38033d25617b8e6d134516c01c58",
+      "requiresEnv": [],
+      "hasExecutionManifest": false
+    },
+    {
+      "id": "summarize-text",
+      "description": "Summarizes long text into concise bullet points or a short paragraph. Works with articles, documents, meeting notes, or any lengthy content. No external API required \u2014 uses simple extractive summarization.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:ae0380c7b0695575b26d4dc64649d854681063d75887ffbe49b79d6331cb5664",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "tavily-search",
+      "description": "AI-optimized web search via Tavily API. Returns concise, relevant results designed for AI agents. Supports deep research and news filtering.",
+      "version": "1.0.0",
+      "author": "clawhub",
+      "contentHash": "sha256:4ce3803012757fd6d1e19d0621a498ce20f95b2338ea4fa81f85a6d786ae118f",
+      "requiresEnv": [
+        "TAVILY_API_KEY"
+      ],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "translate-text",
+      "description": "Translates text between languages using the OpenAI API. Supports any language pair that GPT models can handle. Provide the target language and text as input.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:f2fe73c318229ef87596ca901a2e241e222cafe4035f89a8a31aebe8fcc31747",
+      "requiresEnv": [
+        "OPENAI_API_KEY"
+      ],
+      "hasExecutionManifest": true
+    }
+  ]
+}
