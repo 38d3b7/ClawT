@@ -690,8 +690,7 @@ export default function Home() {
                   </div>
                 ) : billingError ? (
                   <div className="ml-7 text-sm text-muted-foreground">
-                    <p className="mb-2">No active subscription found.</p>
-                    <div className="mb-2 rounded border border-red-200 bg-red-50 p-2 font-mono text-xs text-red-700 break-all">{billingError}</div>
+                    <p className="mb-2">No active subscription found. Set up billing to deploy your agent.</p>
                     <button onClick={handleSubscribeBilling} disabled={subscribingBilling} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50">
                       {subscribingBilling ? "Redirecting..." : "Set Up Billing"}
                     </button>
