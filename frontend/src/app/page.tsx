@@ -16,7 +16,6 @@ import {
   submitTask,
   getGrantStatus,
   getBillingStatus,
-  subscribeToBilling,
   getAgentHealth,
   getAgentEvolution,
   getAgentSkills,
@@ -265,11 +264,6 @@ export default function Home() {
     if (initRef.current) return;
     initRef.current = true;
 
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("billing")) {
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-
     const saved = localStorage.getItem("clawt-session");
     if (!saved) {
       setView("landing");
@@ -330,27 +324,6 @@ export default function Home() {
       }
     } catch (err) {
       setError((err as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleSubscribe() {
-    if (!walletClients || !token) return;
-    try {
-      setLoading(true);
-      const auth = await signBillingAuth(address as `0x${string}`, walletClients.walletClient);
-      const res = await subscribeToBilling(token, auth);
-      if (res.checkoutUrl) {
-        window.location.href = res.checkoutUrl;
-        return;
-      }
-      if (res.alreadyActive) {
-        setBillingActive(true);
-        await runPreflightChecks(address, walletClients.walletClient, token);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
@@ -640,9 +613,9 @@ export default function Home() {
                   <div className="ml-7 text-sm text-muted-foreground">
                     <p className="mb-2">No active subscription found.</p>
                     {billingError && <div className="mb-2 rounded border border-red-200 bg-red-50 p-2 font-mono text-xs text-red-700 break-all">{billingError}</div>}
-                    <button onClick={handleSubscribe} disabled={loading} className="mb-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50">
-                      {loading ? "Opening Stripe..." : "Subscribe via Stripe"}
-                    </button>
+                    <Link href="/eigen-setup" className="inline-block rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90">
+                      Set up EigenCloud account
+                    </Link>
                   </div>
                 )}
               </div>
