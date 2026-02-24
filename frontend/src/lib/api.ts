@@ -14,6 +14,49 @@ export interface TaskResult {
   agentAddress: string;
 }
 
+export interface EvolutionLogEntry {
+  timestamp: number;
+  action: string;
+  path?: string;
+  summary: string;
+  signature: string;
+  riskScore: number;
+}
+
+export interface EvolutionData {
+  stats: {
+    totalModifications: number;
+    evolvedTools: number;
+    evolvedSkills: number;
+    packagesInstalled: number;
+    totalRisk: number;
+  };
+  recentLog: EvolutionLogEntry[];
+}
+
+export interface HealthData {
+  status: string;
+  uptime: { ms: number; formatted: string };
+  grant: { hasGrant: boolean; tokenCount: number };
+  memory: { count: number; categories: Record<string, number> };
+  scheduler: { heartbeats: number; tasks: number };
+  evolution: {
+    totalModifications: number;
+    evolvedTools: number;
+    evolvedSkills: number;
+    packagesInstalled: number;
+    totalRisk: number;
+  };
+  lastError: string | null;
+}
+
+export interface SkillInfo {
+  id: string;
+  description: string;
+  version: string;
+  author: string;
+}
+
 function getHeaders(token: string): HeadersInit {
   return {
     "Content-Type": "application/json",
@@ -161,4 +204,115 @@ export async function getAppInfo(
   });
   if (!res.ok) throw new Error("Failed to get app info");
   return res.json();
+}
+
+export async function getAgentHealth(token: string): Promise<HealthData | null> {
+  try {
+    const res = await fetch("/api/agents/health", { headers: getHeaders(token) });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function getAgentEvolution(token: string): Promise<EvolutionData | null> {
+  try {
+    const res = await fetch("/api/agents/evolution", { headers: getHeaders(token) });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function getAgentSkills(token: string): Promise<SkillInfo[]> {
+  try {
+    const res = await fetch("/api/agents/skills", { headers: getHeaders(token) });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.skills ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function getAgentEnv(token: string): Promise<Record<string, string>> {
+  const res = await fetch("/api/agents/env", { headers: getHeaders(token) });
+  if (!res.ok) throw new Error("Failed to fetch env vars");
+  const data = await res.json();
+  return data.envVars;
+}
+
+// ── Marketplace ──
+
+export interface ListingPreview {
+  id: string;
+  sellerAddress: string;
+  type: "skill" | "soul";
+  title: string;
+  description: string;
+  price: number;
+  status: string;
+  createdAt: string | null;
+}
+
+export interface ListingDetail extends ListingPreview {
+  priceFormatted: string;
+  preview: string;
+  isOwner: boolean;
+  purchased: boolean;
+  content: string | null;
+}
+
+export interface PurchaseItem {
+  purchaseId: string;
+  txHash: string;
+  purchasedAt: string | null;
+  listing: {
+    id: string;
+    type: string;
+    title: string;
+    description: string;
+    price: number;
+    priceFormatted: string;
+    sellerAddress: string;
+    content: string;
+  };
+}
+
+export async function getMarketplaceListings(
+  type?: "skill" | "soul"
+): Promise<ListingPreview[]> {
+  const url = type
+    ? `/api/marketplace/listings?type=${type}`
+    : "/api/marketplace/listings";
+  const res = await fetch(url);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.listings ?? [];
+}
+
+export async function getListingDetail(
+  id: string,
+  token?: string
+): Promise<ListingDetail | null> {
+  const headers: HeadersInit = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(`/api/marketplace/listings/${id}`, { headers });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function getMyPurchases(
+  token: string,
+  type?: "skill" | "soul"
+): Promise<PurchaseItem[]> {
+  const url = type
+    ? `/api/marketplace/purchases?type=${type}`
+    : "/api/marketplace/purchases";
+  const res = await fetch(url, { headers: getHeaders(token) });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.purchases ?? [];
 }

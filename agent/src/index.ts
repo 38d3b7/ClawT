@@ -170,6 +170,36 @@ app.get("/evolution", (_req, res) => {
   res.json({ stats, recentLog: log });
 });
 
+const CLAWT_ENV_KEYS = new Set([
+  "MNEMONIC",
+  "BACKEND_URL",
+  "NETWORK_PUBLIC",
+  "SKILL_REGISTRY_URL",
+  "SKILL_REGISTRY_LOCAL",
+  "EIGENAI_GRANT_API",
+  "EIGENAI_GRANT_MESSAGE",
+  "EIGENAI_GRANT_SIGNATURE",
+  "EIGENAI_WALLET_ADDRESS",
+  "AGENT_MODEL",
+  "AGENT_MAX_TOKENS",
+  "AGENT_SEED",
+  "AGENT_MAX_TURNS",
+  "AGENT_SOUL",
+  "SKILL_TIMEOUT_MS",
+  "SKILL_MAX_BUFFER",
+  "PORT",
+]);
+
+app.get("/env-export", (_req, res) => {
+  const envVars: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v !== undefined && CLAWT_ENV_KEYS.has(k)) {
+      envVars[k] = v;
+    }
+  }
+  res.json({ envVars });
+});
+
 app.get("/health", async (_req, res) => {
   const uptimeMs = Date.now() - startTime;
   const memoryStats = getMemoryStats();

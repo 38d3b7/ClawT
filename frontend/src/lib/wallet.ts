@@ -1,5 +1,16 @@
-import { createWalletClient, createPublicClient, custom, getAddress } from "viem";
-import { sepolia } from "viem/chains";
+import {
+  createWalletClient,
+  createPublicClient,
+  custom,
+  getAddress,
+  erc20Abi,
+  type WalletClient,
+  type PublicClient,
+} from "viem";
+import { sepolia, baseSepolia } from "viem/chains";
+
+const USDC_BASE_SEPOLIA = "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as const;
+const BASE_SEPOLIA_CHAIN_ID = "0x14a34";
 
 declare global {
   interface Window {
@@ -124,4 +135,61 @@ export async function signGrantMessage(address: string) {
   });
 
   return { grantMessage: message, grantSignature: signature };
+}
+
+async function switchToBaseSepolia() {
+  if (!window.ethereum) throw new Error("MetaMask not installed");
+  try {
+    await window.ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: BASE_SEPOLIA_CHAIN_ID }],
+    });
+  } catch (err: unknown) {
+    if ((err as { code?: number }).code === 4902) {
+      await window.ethereum.request({
+        method: "wallet_addEthereumChain",
+        params: [
+          {
+            chainId: BASE_SEPOLIA_CHAIN_ID,
+            chainName: "Base Sepolia",
+            nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
+            rpcUrls: ["https://sepolia.base.org"],
+            blockExplorerUrls: ["https://sepolia.basescan.org"],
+          },
+        ],
+      });
+    } else {
+      throw new Error("Please switch to Base Sepolia to complete the purchase");
+    }
+  }
+}
+
+export async function transferUSDC(
+  fromAddress: `0x${string}`,
+  to: `0x${string}`,
+  amountMicroUsdc: bigint
+): Promise<`0x${string}`> {
+  if (!window.ethereum) throw new Error("MetaMask not installed");
+
+  await switchToBaseSepolia();
+
+  const wc = createWalletClient({
+    account: fromAddress,
+    chain: baseSepolia,
+    transport: custom(window.ethereum),
+  });
+  const pc = createPublicClient({
+    chain: baseSepolia,
+    transport: custom(window.ethereum),
+  });
+
+  const hash = await wc.writeContract({
+    address: USDC_BASE_SEPOLIA,
+    abi: erc20Abi,
+    functionName: "transfer",
+    args: [to, amountMicroUsdc],
+  });
+
+  await pc.waitForTransactionReceipt({ hash });
+  return hash;
 }

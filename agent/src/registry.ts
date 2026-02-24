@@ -15,7 +15,7 @@ export interface SkillCatalogEntry extends Skill {
 
 const REGISTRY_URL =
   process.env.SKILL_REGISTRY_URL ??
-  "https://raw.githubusercontent.com/38d3b7/eigenskills/main/registry/registry.json";
+  "https://raw.githubusercontent.com/38d3b7/ClawT/main/registry.json";
 
 let cachedSkills: Skill[] | null = null;
 let cacheTime = 0;

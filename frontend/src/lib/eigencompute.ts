@@ -161,6 +161,66 @@ export async function deployAgent(
   return { appId: seqResult.appId as `0x${string}` };
 }
 
+export async function upgradeAgentEnv(
+  clients: EigenClients,
+  appId: `0x${string}`,
+  envVars: Record<string, string>,
+  opts: { token: string }
+) {
+  const sdk = await import("@layr-labs/ecloud-sdk/browser");
+  const envConfig = sdk.getEnvironmentConfig("sepolia");
+  const imageRef = process.env.NEXT_PUBLIC_AGENT_IMAGE ?? "clawt/agent:latest";
+
+  const { digest: digestStr, registry } = await resolveImageDigest(imageRef, opts.token);
+
+  const digestHex = digestStr.includes(":") ? digestStr.split(":")[1] : digestStr;
+  const digestBytes = new Uint8Array(
+    digestHex.match(/.{1,2}/g)!.map((byte: string) => parseInt(byte, 16))
+  );
+  if (digestBytes.length !== 32) {
+    throw new Error(`Digest must be 32 bytes, got ${digestBytes.length}`);
+  }
+
+  const keys = sdk.getKMSKeysForEnvironment("sepolia", "prod");
+  const protectedHeaders = sdk.getAppProtectedHeaders(appId);
+  const plaintext = Buffer.from(JSON.stringify(envVars));
+  const encryptedEnvStr = await sdk.encryptRSAOAEPAndAES256GCM(
+    keys.encryptionKey,
+    plaintext,
+    protectedHeaders
+  );
+
+  const release = {
+    rmsRelease: {
+      artifacts: [{ digest: digestBytes, registry }],
+      upgradeByTime: Math.floor(Date.now() / 1000) + 3600,
+    },
+    publicEnv: new Uint8Array(Buffer.from(JSON.stringify({}))),
+    encryptedEnv: new Uint8Array(Buffer.from(encryptedEnvStr)),
+  };
+
+  const prepared = await sdk.prepareUpgradeBatch({
+    walletClient: clients.walletClient,
+    publicClient: clients.publicClient,
+    environmentConfig: envConfig,
+    appID: appId,
+    release,
+    publicLogs: false,
+    needsPermissionChange: false,
+    imageRef,
+  });
+
+  const txHash = await sdk.executeUpgradeBatch(
+    { appId: prepared.appId, executions: prepared.executions },
+    {
+      walletClient: clients.walletClient,
+      publicClient: clients.publicClient,
+      environmentConfig: envConfig,
+    }
+  );
+  return txHash;
+}
+
 export async function sendLifecycleTx(
   clients: EigenClients,
   action: "start" | "stop" | "terminate",
