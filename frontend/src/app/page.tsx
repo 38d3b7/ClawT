@@ -5,6 +5,7 @@ import {
   hasMetaMask,
   connectWallet,
   disconnectWallet,
+  ensureWalletClient,
   signSiweMessage,
   signBillingAuth,
   signGrantMessage,
@@ -17,6 +18,7 @@ import {
   submitTask,
   getGrantStatus,
   getBillingStatus,
+  subscribeToBilling,
   getAgentHealth,
   getAgentEvolution,
   getAgentSkills,
@@ -123,7 +125,7 @@ export default function Home() {
   } | null>(null);
   const [checkingPreflight, setCheckingPreflight] = useState(false);
   const [signingGrant, setSigningGrant] = useState(false);
-  const [resigning, setResigning] = useState(false);
+  const [subscribingBilling, setSubscribingBilling] = useState(false);
   const [siweCredentials, setSiweCredentials] = useState<SiweCredentials | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [walletClients, setWalletClients] = useState<any>(null);
@@ -211,12 +213,14 @@ export default function Home() {
       setCheckingPreflight(true);
       try {
         const [billing, grant] = await Promise.all([
-          checkBillingViaProxy(addr as `0x${string}`, wc, t),
+          wc ? checkBillingViaProxy(addr as `0x${string}`, wc, t) : null,
           getGrantStatus(addr),
         ]);
-        setBillingActive(billing.active);
-        setBillingManageUrl(billing.portalUrl ?? null);
-        setBillingError(billing.active ? null : (billing.error ?? null));
+        if (billing) {
+          setBillingActive(billing.active);
+          setBillingManageUrl(billing.portalUrl ?? null);
+          setBillingError(billing.active ? null : (billing.error ?? null));
+        }
         setGrantStatus({ checked: true, hasGrant: grant.hasGrant, tokenCount: grant.tokenCount });
       } catch {
         setBillingActive(false);
@@ -228,23 +232,53 @@ export default function Home() {
     []
   );
 
-  async function handleResign() {
-    setResigning(true);
+  async function handleCheckBilling() {
+    setCheckingPreflight(true);
     setError("");
     try {
-      const { address: addr, walletClient, publicClient } = await connectWallet();
-      setWalletClients({ walletClient, publicClient, address: addr as `0x${string}` });
-      const { message, signature } = await signSiweMessage(addr as `0x${string}`, walletClient);
-      setSiweCredentials({ message, signature });
-      const { token: t } = await verifyAuth(message, signature);
-      localStorage.setItem("clawt-session", JSON.stringify({ token: t, address: addr }));
-      setAddress(addr);
-      setToken(t);
-      await runPreflightChecks(addr, walletClient, t);
+      let wc = walletClients;
+      if (!wc) {
+        const result = await ensureWalletClient();
+        wc = { walletClient: result.walletClient, publicClient: result.publicClient, address: result.address as `0x${string}` };
+        setWalletClients(wc);
+      }
+      const auth = await signBillingAuth(wc.address, wc.walletClient);
+      const billing = await getBillingStatus(token, auth);
+      setBillingActive(billing.active);
+      setBillingManageUrl(billing.portalUrl ?? null);
+      setBillingError(billing.active ? null : (billing.error ?? null));
     } catch (err) {
-      setError((err as Error).message);
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setResigning(false);
+      setCheckingPreflight(false);
+    }
+  }
+
+  async function handleSubscribeBilling() {
+    setSubscribingBilling(true);
+    setError("");
+    try {
+      let wc = walletClients;
+      if (!wc) {
+        const result = await ensureWalletClient();
+        wc = { walletClient: result.walletClient, publicClient: result.publicClient, address: result.address as `0x${string}` };
+        setWalletClients(wc);
+      }
+      const auth = await signBillingAuth(wc.address, wc.walletClient);
+      const res = await subscribeToBilling(token, auth);
+      if (res.checkoutUrl) {
+        window.location.href = res.checkoutUrl;
+        return;
+      }
+      if (res.alreadyActive) {
+        setBillingActive(true);
+        return;
+      }
+      setError("Could not get checkout URL. Please try again.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubscribingBilling(false);
     }
   }
 
@@ -264,6 +298,12 @@ export default function Home() {
   useEffect(() => {
     if (initRef.current) return;
     initRef.current = true;
+
+    const params = new URLSearchParams(window.location.search);
+    const billingReturn = params.get("billing") === "success";
+    if (billingReturn) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
 
     const saved = localStorage.getItem("clawt-session");
     if (!saved) {
@@ -294,6 +334,26 @@ export default function Home() {
           .catch(() => {
             if (!cancelled) setGrantStatus({ checked: true, hasGrant: false, tokenCount: 0 });
           });
+
+        if (billingReturn) {
+          (async () => {
+            try {
+              const result = await ensureWalletClient();
+              if (cancelled) return;
+              const wc = { walletClient: result.walletClient, publicClient: result.publicClient, address: result.address as `0x${string}` };
+              setWalletClients(wc);
+              const auth = await signBillingAuth(result.address as `0x${string}`, result.walletClient);
+              const billing = await getBillingStatus(t, auth);
+              if (!cancelled) {
+                setBillingActive(billing.active);
+                setBillingManageUrl(billing.portalUrl ?? null);
+                setBillingError(billing.active ? null : (billing.error ?? null));
+              }
+            } catch {
+              // Billing auto-check failed — user can retry with "Check Billing" button
+            }
+          })();
+        }
       })
       .catch(() => {
         if (!cancelled) setView("landing");
@@ -616,10 +676,10 @@ export default function Home() {
                 <div className="mb-2 flex items-center gap-2">
                   {billingActive ? (
                     <span className="flex h-5 w-5 items-center justify-center rounded-full bg-green-100 text-green-600 text-xs">&#10003;</span>
-                  ) : !walletClients ? (
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-100 text-gray-500 text-xs">?</span>
-                  ) : (
+                  ) : billingError ? (
                     <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-red-600 text-xs">&#10005;</span>
+                  ) : (
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-100 text-gray-500 text-xs">?</span>
                   )}
                   <h3 className="text-sm font-medium">EigenCloud Billing</h3>
                 </div>
@@ -628,20 +688,20 @@ export default function Home() {
                     <p>Subscription active</p>
                     {billingManageUrl && <a href={billingManageUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block text-primary underline">Manage billing</a>}
                   </div>
-                ) : !walletClients ? (
+                ) : billingError ? (
                   <div className="ml-7 text-sm text-muted-foreground">
-                    <p className="mb-2">Sign with your wallet to verify billing status.</p>
-                    <button onClick={handleResign} disabled={resigning} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50">
-                      {resigning ? "Signing..." : "Verify Wallet"}
+                    <p className="mb-2">No active subscription found.</p>
+                    <div className="mb-2 rounded border border-red-200 bg-red-50 p-2 font-mono text-xs text-red-700 break-all">{billingError}</div>
+                    <button onClick={handleSubscribeBilling} disabled={subscribingBilling} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50">
+                      {subscribingBilling ? "Redirecting..." : "Set Up Billing"}
                     </button>
                   </div>
                 ) : (
                   <div className="ml-7 text-sm text-muted-foreground">
-                    <p className="mb-2">No active subscription found.</p>
-                    {billingError && <div className="mb-2 rounded border border-red-200 bg-red-50 p-2 font-mono text-xs text-red-700 break-all">{billingError}</div>}
-                    <Link href="/eigen-setup" className="inline-block rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90">
-                      Set up EigenCloud account
-                    </Link>
+                    <p className="mb-2">Check your EigenCloud billing status.</p>
+                    <button onClick={handleCheckBilling} disabled={checkingPreflight} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50">
+                      {checkingPreflight ? "Checking..." : "Check Billing"}
+                    </button>
                   </div>
                 )}
               </div>

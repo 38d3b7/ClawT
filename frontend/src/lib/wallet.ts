@@ -39,12 +39,8 @@ export async function disconnectWallet() {
   }
 }
 
-export async function connectWallet() {
+async function resolveWalletClients() {
   if (!window.ethereum) throw new Error("MetaMask not installed");
-
-  // Revoke existing permissions so MetaMask always shows the account picker,
-  // even if the user was previously connected with a different wallet.
-  await disconnectWallet();
 
   const accounts = (await window.ethereum.request({
     method: "eth_requestAccounts",
@@ -87,6 +83,15 @@ export async function connectWallet() {
   });
 
   return { address, walletClient, publicClient };
+}
+
+export async function connectWallet() {
+  await disconnectWallet();
+  return resolveWalletClients();
+}
+
+export async function ensureWalletClient() {
+  return resolveWalletClients();
 }
 
 export async function signSiweMessage(address: `0x${string}`, walletClient: ReturnType<typeof createWalletClient>) {
