@@ -305,11 +305,11 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!window.ethereum) return;
+    if (!window.ethereum || !address) return;
 
     const onAccountsChanged = (...args: unknown[]) => {
       const accounts = args[0] as string[];
-      if (accounts.length === 0 || accounts[0] !== address) {
+      if (accounts.length === 0 || accounts[0].toLowerCase() !== address.toLowerCase()) {
         localStorage.removeItem("clawt-session");
         window.location.reload();
       }
