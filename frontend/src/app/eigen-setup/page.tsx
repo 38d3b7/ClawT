@@ -49,6 +49,30 @@ export default function EigenSetup() {
     }
   }, []);
 
+  useEffect(() => {
+    if (!window.ethereum) return;
+
+    const onAccountsChanged = (...args: unknown[]) => {
+      const accounts = args[0] as string[];
+      if (accounts.length === 0 || accounts[0] !== address) {
+        localStorage.removeItem("clawt-session");
+        window.location.reload();
+      }
+    };
+
+    const onChainChanged = () => {
+      window.location.reload();
+    };
+
+    window.ethereum.on("accountsChanged", onAccountsChanged);
+    window.ethereum.on("chainChanged", onChainChanged);
+
+    return () => {
+      window.ethereum?.removeListener("accountsChanged", onAccountsChanged);
+      window.ethereum?.removeListener("chainChanged", onChainChanged);
+    };
+  }, [address]);
+
   async function handleConnect() {
     setError("");
     try {

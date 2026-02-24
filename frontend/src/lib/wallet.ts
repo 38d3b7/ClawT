@@ -17,6 +17,7 @@ declare global {
     ethereum?: {
       request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
       on: (event: string, handler: (...args: unknown[]) => void) => void;
+      removeListener: (event: string, handler: (...args: unknown[]) => void) => void;
       isMetaMask?: boolean;
     };
   }
@@ -26,8 +27,25 @@ export function hasMetaMask(): boolean {
   return typeof window !== "undefined" && !!window.ethereum;
 }
 
+export async function disconnectWallet() {
+  if (!window.ethereum) return;
+  try {
+    await window.ethereum.request({
+      method: "wallet_revokePermissions",
+      params: [{ eth_accounts: {} }],
+    });
+  } catch {
+    // Not all wallets support wallet_revokePermissions — safe to ignore
+  }
+}
+
 export async function connectWallet() {
   if (!window.ethereum) throw new Error("MetaMask not installed");
+
+  // Revoke existing permissions so MetaMask always shows the account picker,
+  // even if the user was previously connected with a different wallet.
+  await disconnectWallet();
+
   const accounts = (await window.ethereum.request({
     method: "eth_requestAccounts",
   })) as string[];

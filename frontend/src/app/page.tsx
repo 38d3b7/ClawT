@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   hasMetaMask,
   connectWallet,
+  disconnectWallet,
   signSiweMessage,
   signBillingAuth,
   signGrantMessage,
@@ -303,6 +304,30 @@ export default function Home() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!window.ethereum) return;
+
+    const onAccountsChanged = (...args: unknown[]) => {
+      const accounts = args[0] as string[];
+      if (accounts.length === 0 || accounts[0] !== address) {
+        localStorage.removeItem("clawt-session");
+        window.location.reload();
+      }
+    };
+
+    const onChainChanged = () => {
+      window.location.reload();
+    };
+
+    window.ethereum.on("accountsChanged", onAccountsChanged);
+    window.ethereum.on("chainChanged", onChainChanged);
+
+    return () => {
+      window.ethereum?.removeListener("accountsChanged", onAccountsChanged);
+      window.ethereum?.removeListener("chainChanged", onChainChanged);
+    };
+  }, [address]);
+
   async function handleConnect() {
     try {
       setError("");
@@ -484,7 +509,8 @@ export default function Home() {
       .catch(() => {});
   }
 
-  function handleDisconnect() {
+  async function handleDisconnect() {
+    await disconnectWallet();
     localStorage.removeItem("clawt-session");
     setAddress("");
     setToken("");
