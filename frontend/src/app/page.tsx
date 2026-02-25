@@ -28,7 +28,7 @@ import type {
   AgentInfo,
   HealthData,
   EvolutionData,
-  EvolutionLogEntry,
+  PrincipleEntry,
   SkillInfo,
 } from "@/lib/api";
 import { STARTER_SOULS } from "@/lib/souls";
@@ -38,7 +38,7 @@ import { generateMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english.js";
 
 type View = "landing" | "setup" | "dashboard" | "loading";
-type DashboardTab = "overview" | "evolution" | "tools" | "identity" | "audit" | "settings";
+type DashboardTab = "overview" | "evolution" | "tools" | "identity" | "settings";
 
 interface SiweCredentials {
   message: string;
@@ -64,37 +64,98 @@ function timeAgo(ts: number): string {
   return `${days}d ago`;
 }
 
-function RiskBadge({ score }: { score: number }) {
-  const cls =
-    score <= 2
-      ? "bg-green-100 text-green-700"
-      : score === 3
-        ? "bg-yellow-100 text-yellow-700"
-        : "bg-red-100 text-red-700";
-  return <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>{score}</span>;
-}
-
-function ActionIcon({ action }: { action: string }) {
-  const labels: Record<string, string> = {
-    synthesize_tool: "T",
-    create_skill: "S",
-    install_package: "P",
-    write_file: "W",
-  };
-  return (
-    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
-      {labels[action] ?? "?"}
-    </span>
-  );
-}
-
-function StatCard({ label, value }: { label: string; value: string | number }) {
+function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
   return (
     <div className="rounded-lg border border-border p-4">
       <p className="text-2xl font-semibold">{value}</p>
       <p className="text-xs text-muted-foreground">{label}</p>
+      {sub && <p className="mt-0.5 text-[10px] text-muted-foreground/70">{sub}</p>}
     </div>
   );
+}
+
+function TokenBudgetBar({ used, budget }: { used: number; budget: number }) {
+  const pct = Math.min((used / budget) * 100, 100);
+  const color = pct > 80 ? "bg-red-500" : pct > 60 ? "bg-yellow-500" : "bg-emerald-500";
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+        <span>Playbook token budget</span>
+        <span>{used.toLocaleString()} / {budget.toLocaleString()}</span>
+      </div>
+      <div className="h-1.5 w-full rounded-full bg-muted">
+        <div className={`h-1.5 rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function ScoreBar({ score, label }: { score: number; label?: string }) {
+  const pct = Math.min(score * 100, 100);
+  const color = score >= 0.7 ? "bg-emerald-500" : score >= 0.4 ? "bg-yellow-500" : "bg-red-400";
+  return (
+    <div className="flex items-center gap-2">
+      <div className="h-1.5 w-20 rounded-full bg-muted">
+        <div className={`h-1.5 rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-[10px] tabular-nums text-muted-foreground">{label ?? score.toFixed(2)}</span>
+    </div>
+  );
+}
+
+function PlaybookSection({ title, bullets }: { title: string; bullets: Array<{ id: string; helpful: number; harmful: number; content: string }> }) {
+  if (bullets.length === 0) return null;
+  return (
+    <div>
+      <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</h4>
+      <div className="space-y-1.5">
+        {bullets.map((b) => (
+          <div key={b.id} className="group flex items-start gap-2 rounded-md border border-border/50 px-3 py-2 transition-colors hover:border-border">
+            <span className="mt-0.5 shrink-0 rounded bg-muted px-1 py-0.5 font-mono text-[9px] text-muted-foreground">{b.id}</span>
+            <p className="min-w-0 flex-1 text-xs leading-relaxed">{b.content}</p>
+            <div className="flex shrink-0 items-center gap-1.5 text-[10px]">
+              <span className="text-emerald-600" title="Helpful">{b.helpful}</span>
+              <span className="text-muted-foreground">/</span>
+              <span className="text-red-500" title="Harmful">{b.harmful}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+interface PlaybookBullet {
+  id: string;
+  helpful: number;
+  harmful: number;
+  content: string;
+  section: string;
+}
+
+function parsePlaybookForUI(text: string): { sections: Map<string, PlaybookBullet[]> } {
+  const sections = new Map<string, PlaybookBullet[]>();
+  let currentSection = "Others";
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("## ")) {
+      currentSection = trimmed.slice(3);
+      if (!sections.has(currentSection)) sections.set(currentSection, []);
+      continue;
+    }
+    const match = trimmed.match(/^\[([^\]]+)\]\s*helpful=(\d+)\s*harmful=(\d+)\s*::\s*(.*)$/);
+    if (match) {
+      if (!sections.has(currentSection)) sections.set(currentSection, []);
+      sections.get(currentSection)!.push({
+        id: match[1],
+        helpful: parseInt(match[2], 10),
+        harmful: parseInt(match[3], 10),
+        content: match[4],
+        section: currentSection,
+      });
+    }
+  }
+  return { sections };
 }
 
 export default function Home() {
@@ -350,7 +411,7 @@ export default function Home() {
                 setBillingError(billing.active ? null : (billing.error ?? null));
               }
             } catch {
-              // Billing auto-check failed — user can retry with "Check Billing" button
+              // Billing auto-check failed
             }
           })();
         }
@@ -596,12 +657,15 @@ export default function Home() {
   const agentStatus = agentInfo?.status ?? "";
   const TABS: { id: DashboardTab; label: string }[] = [
     { id: "overview", label: "Overview" },
-    { id: "evolution", label: "Evolution" },
-    { id: "tools", label: "Tools & Skills" },
+    { id: "evolution", label: "Self-Improvement" },
+    { id: "tools", label: "Skills" },
     { id: "identity", label: "Identity" },
-    { id: "audit", label: "Audit Log" },
     { id: "settings", label: "Settings" },
   ];
+
+  const playbookParsed = evolution?.playbook ? parsePlaybookForUI(evolution.playbook) : null;
+  const pbStats = evolution?.stats.playbook;
+  const prStats = evolution?.stats.principles;
 
   return (
     <div className="min-h-screen bg-background">
@@ -650,7 +714,7 @@ export default function Home() {
             </div>
             <h2 className="mb-3 text-2xl font-semibold">Deploy Your Own AI Agent</h2>
             <p className="mb-8 text-muted-foreground">
-              Sign in with your Ethereum wallet to deploy a verifiable, self-evolving AI agent in a Trusted Execution Environment on EigenCompute.
+              Sign in with your Ethereum wallet to deploy a verifiable, self-improving AI agent in a Trusted Execution Environment on EigenCompute.
             </p>
             {hasMetaMask() ? (
               <button onClick={handleConnect} disabled={loading} className="rounded-lg bg-primary px-8 py-3 font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50">
@@ -875,10 +939,26 @@ export default function Home() {
               <div className="space-y-6">
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   <StatCard label="Uptime" value={health?.uptime.formatted ?? "--"} />
-                  <StatCard label="Evolved Tools" value={evolution?.stats.evolvedTools ?? 0} />
-                  <StatCard label="Evolved Skills" value={evolution?.stats.evolvedSkills ?? 0} />
-                  <StatCard label="Risk Score" value={evolution?.stats.totalRisk ?? 0} />
+                  <StatCard
+                    label="Playbook Bullets"
+                    value={pbStats?.totalBullets ?? 0}
+                    sub={pbStats ? `${pbStats.highPerforming} strong` : undefined}
+                  />
+                  <StatCard
+                    label="Principles Learned"
+                    value={prStats?.total ?? 0}
+                    sub={prStats ? `avg ${prStats.avgScore.toFixed(2)}` : undefined}
+                  />
+                  <StatCard
+                    label="Memory"
+                    value={health?.memory.count ?? 0}
+                    sub={`${health?.scheduler.tasks ?? 0} scheduled`}
+                  />
                 </div>
+
+                {pbStats && (
+                  <TokenBudgetBar used={pbStats.approxTokens} budget={4000} />
+                )}
 
                 {health && (
                   <div className="rounded-lg border border-border p-4">
@@ -916,100 +996,120 @@ export default function Home() {
               </div>
             )}
 
-            {/* ── Evolution Tab ── */}
+            {/* ── Self-Improvement Tab ── */}
             {dashTab === "evolution" && (
-              <div className="space-y-6">
-                {evolution && evolution.recentLog.length > 0 ? (
-                  <div className="space-y-0">
-                    <h3 className="mb-4 text-sm font-medium">Activity Timeline</h3>
-                    <div className="relative border-l-2 border-border pl-6">
-                      {evolution.recentLog
-                        .slice()
-                        .reverse()
-                        .map((entry: EvolutionLogEntry, i: number) => (
-                          <div key={i} className="relative mb-5 last:mb-0">
-                            <div className="absolute -left-[31px] top-1">
-                              <ActionIcon action={entry.action} />
-                            </div>
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0 flex-1">
-                                <p className="text-sm">{entry.summary}</p>
-                                {entry.path && (
-                                  <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">{entry.path}</p>
-                                )}
-                              </div>
-                              <div className="flex shrink-0 items-center gap-2">
-                                <RiskBadge score={entry.riskScore} />
-                                <span className="text-xs text-muted-foreground">{timeAgo(entry.timestamp)}</span>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="py-12 text-center text-sm text-muted-foreground">
-                    No evolution activity yet. Your agent will start evolving as it handles tasks.
-                  </div>
+              <div className="space-y-8">
+                {/* Metrics row */}
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                  <StatCard label="Playbook Bullets" value={pbStats?.totalBullets ?? 0} />
+                  <StatCard label="High Performing" value={pbStats?.highPerforming ?? 0} />
+                  <StatCard label="Problematic" value={pbStats?.problematic ?? 0} />
+                  <StatCard label="Principles" value={prStats?.total ?? 0} />
+                  <StatCard label="Avg Score" value={prStats?.avgScore.toFixed(2) ?? "0.00"} />
+                </div>
+
+                {pbStats && (
+                  <TokenBudgetBar used={pbStats.approxTokens} budget={4000} />
                 )}
 
-                <div className="rounded-lg border border-border p-4">
-                  <h3 className="mb-3 text-sm font-medium">Stats</h3>
-                  <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
-                    <div><span className="text-muted-foreground">Total modifications:</span> <span className="font-medium">{evolution?.stats.totalModifications ?? 0}</span></div>
-                    <div><span className="text-muted-foreground">Tools synthesized:</span> <span className="font-medium">{evolution?.stats.evolvedTools ?? 0}</span></div>
-                    <div><span className="text-muted-foreground">Skills created:</span> <span className="font-medium">{evolution?.stats.evolvedSkills ?? 0}</span></div>
-                    <div><span className="text-muted-foreground">Packages installed:</span> <span className="font-medium">{evolution?.stats.packagesInstalled ?? 0}</span></div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ── Tools & Skills Tab ── */}
-            {dashTab === "tools" && (
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                {/* Playbook */}
                 <div>
-                  <h3 className="mb-3 text-sm font-medium">Evolved Tools</h3>
-                  {skills.filter((s) => s.author === "self").length > 0 ? (
-                    <div className="space-y-2">
-                      {skills
-                        .filter((s) => s.author === "self")
-                        .map((s) => (
-                          <div key={s.id} className="rounded-lg border border-border p-3">
-                            <div className="flex items-center gap-2">
-                              <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">evolved</span>
-                              <span className="text-sm font-medium">{s.id}</span>
-                            </div>
-                            <p className="mt-1 text-xs text-muted-foreground">{s.description}</p>
-                          </div>
-                        ))}
+                  <div className="mb-4 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-medium">Adaptive Playbook</h3>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Evolving guidance that shapes your agent&apos;s decisions. Updated automatically via reflection and periodic curation.
+                      </p>
+                    </div>
+                  </div>
+
+                  {playbookParsed && playbookParsed.sections.size > 0 ? (
+                    <div className="space-y-6">
+                      {Array.from(playbookParsed.sections.entries()).map(([section, bullets]) => (
+                        <PlaybookSection key={section} title={section} bullets={bullets} />
+                      ))}
                     </div>
                   ) : (
-                    <div className="rounded-lg border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-                      No evolved tools yet. As your agent handles tasks, it will synthesize reusable tools for recurring patterns.
+                    <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+                      No playbook entries yet. Your agent will build its playbook as it handles tasks and reflects on outcomes.
                     </div>
                   )}
                 </div>
 
+                {/* Principles */}
                 <div>
-                  <h3 className="mb-3 text-sm font-medium">Registry Skills</h3>
-                  {skills.filter((s) => s.author !== "self").length > 0 ? (
+                  <div className="mb-4">
+                    <h3 className="text-sm font-medium">Learned Principles</h3>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Strategic knowledge distilled from past tasks. Each principle has a Bayesian score tracking its effectiveness.
+                    </p>
+                  </div>
+
+                  {evolution && evolution.principles.length > 0 ? (
                     <div className="space-y-2">
-                      {skills
-                        .filter((s) => s.author !== "self")
-                        .map((s) => (
-                          <div key={s.id} className="rounded-lg border border-border p-3">
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm font-medium">{s.id}</span>
-                              <span className="text-[10px] text-muted-foreground">v{s.version}</span>
+                      {evolution.principles.map((p: PrincipleEntry) => (
+                        <div key={p.id} className="flex items-start gap-3 rounded-lg border border-border p-3">
+                          <span className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                            p.type === "guiding"
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-amber-100 text-amber-700"
+                          }`}>
+                            {p.type}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs leading-relaxed">{p.description}</p>
+                            <div className="mt-1 flex items-center gap-3 text-[10px] text-muted-foreground">
+                              <span>Used {p.usageCount}x</span>
+                              <span>{p.successCount}/{p.usageCount} succeeded</span>
+                              <span>{timeAgo(p.createdAt)}</span>
                             </div>
-                            <p className="mt-1 text-xs text-muted-foreground">{s.description}</p>
                           </div>
-                        ))}
+                          <div className="shrink-0">
+                            <ScoreBar score={p.metricScore} />
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   ) : (
-                    <div className="rounded-lg border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-                      No registry skills loaded.
+                    <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+                      No principles learned yet. After completing tasks, your agent distills reusable strategic principles from each interaction.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ── Skills Tab ── */}
+            {dashTab === "tools" && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="mb-3 text-sm font-medium">Available Skills</h3>
+                  <p className="mb-4 text-xs text-muted-foreground">
+                    Skills your agent can select from to handle tasks. Browse the{" "}
+                    <Link href="/skills" className="text-primary underline">skill catalog</Link>{" "}
+                    or discover premium skills on the{" "}
+                    <Link href="/skills" className="text-primary underline">marketplace</Link>.
+                  </p>
+                  {skills.length > 0 ? (
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {skills.map((s) => (
+                        <div key={s.id} className="rounded-lg border border-border p-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              {s.author === "marketplace" && (
+                                <span className="rounded bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700">marketplace</span>
+                              )}
+                              <span className="text-sm font-medium">{s.id}</span>
+                            </div>
+                            <span className="text-[10px] text-muted-foreground">v{s.version}</span>
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">{s.description}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-border p-8 text-center text-xs text-muted-foreground">
+                      No skills loaded. Start your agent to discover available skills.
                     </div>
                   )}
                 </div>
@@ -1021,7 +1121,7 @@ export default function Home() {
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                 <div>
                   <h3 className="mb-1 text-sm font-medium">SOUL.md</h3>
-                  <p className="mb-3 text-xs text-muted-foreground">Core identity and values. Chosen at deployment.</p>
+                  <p className="mb-3 text-xs text-muted-foreground">Core identity and values. Immutable after deployment &mdash; protected by integrity verification.</p>
                   <div className="rounded-lg border border-border bg-muted/30 p-4">
                     <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed">{selectedSoul?.content ?? "Not set"}</pre>
                   </div>
@@ -1035,54 +1135,6 @@ export default function Home() {
                     </pre>
                   </div>
                 </div>
-              </div>
-            )}
-
-            {/* ── Audit Log Tab ── */}
-            {dashTab === "audit" && (
-              <div className="space-y-4">
-                {agentInfo?.walletAddressEth && (
-                  <p className="text-xs text-muted-foreground">
-                    {evolution?.stats.totalModifications ?? 0} modifications, all signed by TEE wallet{" "}
-                    <span className="font-mono">{agentInfo.walletAddressEth.slice(0, 10)}...{agentInfo.walletAddressEth.slice(-6)}</span>
-                  </p>
-                )}
-
-                {evolution && evolution.recentLog.length > 0 ? (
-                  <div className="overflow-x-auto rounded-lg border border-border">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b border-border bg-muted/50">
-                          <th className="px-3 py-2 text-left font-medium">Time</th>
-                          <th className="px-3 py-2 text-left font-medium">Action</th>
-                          <th className="px-3 py-2 text-left font-medium">Summary</th>
-                          <th className="px-3 py-2 text-left font-medium">Risk</th>
-                          <th className="px-3 py-2 text-left font-medium">Signature</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {evolution.recentLog
-                          .slice()
-                          .reverse()
-                          .map((entry: EvolutionLogEntry, i: number) => (
-                            <tr key={i} className="border-b border-border last:border-0">
-                              <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{timeAgo(entry.timestamp)}</td>
-                              <td className="px-3 py-2 font-medium">{entry.action}</td>
-                              <td className="max-w-[250px] truncate px-3 py-2">{entry.summary}</td>
-                              <td className="px-3 py-2"><RiskBadge score={entry.riskScore} /></td>
-                              <td className="px-3 py-2 font-mono text-muted-foreground">
-                                {entry.signature.slice(0, 10)}...{entry.signature.slice(-6)}
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="py-12 text-center text-sm text-muted-foreground">
-                    No audit entries yet.
-                  </div>
-                )}
               </div>
             )}
 

@@ -39,6 +39,15 @@
       "hasExecutionManifest": true
     },
     {
+      "id": "defi-yield-farmer",
+      "description": "Autonomous Aave V3 yield optimizer. Scans markets across chains every few hours, finds the best supply yields, and builds rebalance transaction plans including withdrawals, cross-chain swaps, and deposits. Powered by PayToll.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
       "id": "paytoll-aave-best-borrow",
       "description": "Find the lowest Aave V3 borrow APR across all chains for a given asset. Costs $0.01 per call.",
       "version": "1.0.0",

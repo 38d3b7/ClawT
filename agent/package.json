@@ -11,6 +11,9 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@x402/core": "^2.4.0",
+    "@x402/evm": "^2.4.0",
+    "@x402/fetch": "^2.4.0",
     "cors": "^2.8.5",
     "express": "^4.21.0",
     "gray-matter": "^4.0.3",

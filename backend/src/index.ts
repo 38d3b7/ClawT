@@ -27,8 +27,6 @@ import {
   runEcloudCommand,
   EIGENCOMPUTE_ENVIRONMENT,
 } from "./eigencompute.js";
-import { generateMnemonic } from "@scure/bip39";
-import { wordlist as english } from "@scure/bip39/wordlists/english.js";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -122,13 +120,12 @@ app.post("/api/agents/deploy", deployLimiter, requireAuth, async (req, res) => {
 
     agentId = createAgent(userAddress, name);
     const ecloudName = `clawt-${userAddress.slice(2, 10)}`;
-    const mnemonic = generateMnemonic(english, 128);
 
     const systemVars = [
-      { key: "MNEMONIC", value: mnemonic, isPublic: false },
       { key: "BACKEND_URL", value: process.env.BACKEND_PUBLIC_URL ?? "", isPublic: false },
       { key: "SKILL_REGISTRY_URL", value: process.env.SKILL_REGISTRY_URL ?? "", isPublic: true },
       { key: "NETWORK_PUBLIC", value: process.env.EIGENCOMPUTE_ENVIRONMENT === "mainnet-alpha" ? "mainnet" : "sepolia", isPublic: true },
+      { key: "MARKETPLACE_URL", value: process.env.FRONTEND_URL ?? "", isPublic: true },
     ];
 
     const userKeys = new Set(envVars.map((v) => v.key));

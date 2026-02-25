@@ -34,6 +34,7 @@ export const listings = sqliteTable("listings", {
   description: text("description").notNull(),
   price: integer("price").notNull(),
   content: text("content").notNull(),
+  signature: text("signature"),
   status: text("status").notNull().default("active"),
   createdAt: text("created_at").default(sql`(datetime('now'))`),
 });

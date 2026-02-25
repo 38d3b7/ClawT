@@ -2,6 +2,9 @@ import { execSync } from "child_process";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import matter from "gray-matter";
+import { computeManifestFromDir, rootHashToBytes32 } from "../../shared/manifest.js";
+import { verifySkillSignature, type SkillSignature } from "../../shared/skill-signing.js";
+import { getSkill } from "./registry.js";
 
 const SKILLS_CACHE_DIR = "/tmp/clawt";
 const EXEC_TIMEOUT_MS = parseInt(process.env.SKILL_TIMEOUT_MS ?? "30000", 10);
@@ -69,6 +72,56 @@ function buildSandboxedEnv(requiresEnv: string[]): Record<string, string> {
   return env;
 }
 
+async function verifySkillIntegrity(
+  skillId: string,
+  skillPath: string
+): Promise<void> {
+  const registryEntry = await getSkill(skillId);
+  const expectedHash = registryEntry?.contentHash;
+  const hasSig = existsSync(join(skillPath, "SIGNATURE.json"));
+
+  if (!expectedHash && !hasSig) return;
+
+  const manifest = computeManifestFromDir(skillPath);
+
+  if (expectedHash) {
+    if (manifest.rootHash !== expectedHash) {
+      throw new Error(
+        `Integrity check failed for ${skillId}: expected ${expectedHash}, got ${manifest.rootHash}`
+      );
+    }
+  }
+
+  if (hasSig) {
+    try {
+      const sig: SkillSignature = JSON.parse(
+        readFileSync(join(skillPath, "SIGNATURE.json"), "utf-8")
+      );
+      const manifestBytes32 = rootHashToBytes32(manifest.rootHash);
+
+      if (sig.contentHash !== manifestBytes32) {
+        throw new Error(
+          `Signature contentHash mismatch for ${skillId}: ` +
+            `signature says ${sig.contentHash}, files hash to ${manifestBytes32}`
+        );
+      }
+
+      const valid = await verifySkillSignature(sig);
+      if (!valid) {
+        throw new Error(`Invalid signature for ${skillId}`);
+      }
+
+      console.log(`[verify] ${skillId}: signature valid (author: ${sig.author})`);
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        console.warn(`[verify] ${skillId}: malformed SIGNATURE.json, skipping`);
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 export async function executeSkill(
   skillId: string,
   input: string
@@ -79,6 +132,8 @@ export async function executeSkill(
   if (!existsSync(manifestPath)) {
     throw new Error(`SKILL.md not found for ${skillId}`);
   }
+
+  await verifySkillIntegrity(skillId, skillPath);
 
   const manifestContent = readFileSync(manifestPath, "utf-8");
   const { data } = matter(manifestContent);

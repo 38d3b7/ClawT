@@ -27,12 +27,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { type, title, description, price, content } = body as {
+  const { type, title, description, price, content, signature } = body as {
     type?: string;
     title?: string;
     description?: string;
     price?: number;
     content?: string;
+    signature?: string;
   };
 
   if (!type || (type !== "skill" && type !== "soul")) {
@@ -62,6 +63,7 @@ export async function POST(request: Request) {
     description,
     price,
     content,
+    signature: signature || undefined,
   });
 
   return NextResponse.json({ id }, { status: 201 });

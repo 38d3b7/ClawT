@@ -4,19 +4,22 @@ import cors from "cors";
 import { randomUUID } from "crypto";
 import { getAgentAddress, signMessage } from "./wallet.js";
 import { listSkills, listSkillsCatalog, fetchRegistry } from "./registry.js";
-import { agentLoop, checkGrantStatus, callEigenAIText, setRuntimeEvolvedTools } from "./router.js";
+import { agentLoop, checkGrantStatus, callEigenAIText } from "./router.js";
 import { executeSkill } from "./executor.js";
 import { addLogEntry, getHistory } from "./logger.js";
 import { validateInput, sanitizeOutput, validateSessionId } from "./security.js";
 import { initMemory, getMemoryStats } from "./memory.js";
 import { initHeartbeat, registerHeartbeat, listHeartbeats, listTasks } from "./heartbeat.js";
-import { initEvolution, loadEvolvedTools, getEvolutionStats, getEvolutionLog } from "./evolution.js";
+import { initEvolution, getEvolutionStats } from "./evolution.js";
 import {
   saveOutcome,
   buildReflectionPrompt,
-  buildHeartbeatEvolutionPrompt,
+  buildCuratorPrompt,
   updateUserPreference,
 } from "./reflection.js";
+import { initPlaybook, loadPlaybook, updateBulletCounts, savePlaybook, getPlaybookStats } from "./playbook.js";
+import { createPrinciple, getPrincipleStats, listAllPrinciples } from "./principles.js";
+import type { CuratorOperation } from "./playbook.js";
 
 const app = express();
 app.use(helmet());
@@ -45,7 +48,9 @@ app.post("/task", async (req, res) => {
     }
 
     if (validation.injectionRisk > 0.5) {
-      console.warn(`[${requestId}] High injection risk (${validation.injectionRisk}): ${validation.warnings.join(", ")}`);
+      console.warn(
+        `[${requestId}] High injection risk (${validation.injectionRisk}): ${validation.warnings.join(", ")}`
+      );
     }
 
     const sessionId = validateSessionId(rawSessionId);
@@ -100,10 +105,25 @@ app.post("/task", async (req, res) => {
         try {
           const parsed = JSON.parse(reflectionResponse);
           success = parsed.success !== false;
+
           if (parsed.learning) {
             const { saveMemory } = await import("./memory.js");
             saveMemory(`reflection:${Date.now()}`, parsed.learning, "context");
           }
+
+          if (parsed.principle?.description) {
+            createPrinciple(
+              parsed.principle.type === "cautionary" ? "cautionary" : "guiding",
+              parsed.principle.description
+            );
+          }
+
+          if (parsed.bulletTags && Array.isArray(parsed.bulletTags)) {
+            const playbook = loadPlaybook();
+            const updated = updateBulletCounts(playbook, parsed.bulletTags);
+            await savePlaybook(updated, "reflection_tag");
+          }
+
           if (parsed.userPreference) {
             updateUserPreference(parsed.userPreference);
           }
@@ -165,9 +185,21 @@ app.get("/whoami", (_req, res) => {
 });
 
 app.get("/evolution", (_req, res) => {
-  const stats = getEvolutionStats();
-  const log = getEvolutionLog().slice(-20);
-  res.json({ stats, recentLog: log });
+  const evoStats = getEvolutionStats();
+  const playbookStats = getPlaybookStats(loadPlaybook());
+  const principleStats = getPrincipleStats();
+  const principles = listAllPrinciples().slice(0, 20);
+  const playbook = loadPlaybook();
+
+  res.json({
+    stats: {
+      ...evoStats,
+      playbook: playbookStats,
+      principles: principleStats,
+    },
+    playbook,
+    principles,
+  });
 });
 
 const CLAWT_ENV_KEYS = new Set([
@@ -176,6 +208,10 @@ const CLAWT_ENV_KEYS = new Set([
   "NETWORK_PUBLIC",
   "SKILL_REGISTRY_URL",
   "SKILL_REGISTRY_LOCAL",
+  "MARKETPLACE_URL",
+  "RPC_URL_SEPOLIA",
+  "RPC_URL_BASE_SEPOLIA",
+  "WALLET_MAX_TRANSFER_USD",
   "EIGENAI_GRANT_API",
   "EIGENAI_GRANT_MESSAGE",
   "EIGENAI_GRANT_SIGNATURE",
@@ -210,10 +246,12 @@ app.get("/health", async (_req, res) => {
   try {
     grantStatus = await checkGrantStatus();
   } catch {
-    // Grant check failures are non-fatal in health endpoint
+    // Grant check failures are non-fatal
   }
 
   const evoStats = getEvolutionStats();
+  const playbookStats = getPlaybookStats(loadPlaybook());
+  const principleStats = getPrincipleStats();
 
   res.json({
     status: "ok",
@@ -227,7 +265,11 @@ app.get("/health", async (_req, res) => {
       heartbeats: heartbeats.length,
       tasks: tasks.length,
     },
-    evolution: evoStats,
+    selfImprovement: {
+      ...evoStats,
+      playbook: playbookStats,
+      principles: principleStats,
+    },
     lastError: lastErrorTime ? new Date(lastErrorTime).toISOString() : null,
   });
 });
@@ -247,12 +289,7 @@ async function initialize() {
   const backendUrl = process.env.BACKEND_URL;
   initMemory({ backendUrl });
   initEvolution();
-
-  const evolvedTools = await loadEvolvedTools();
-  setRuntimeEvolvedTools(evolvedTools);
-  if (evolvedTools.length > 0) {
-    console.log(`Loaded ${evolvedTools.length} evolved tools: ${evolvedTools.map(t => t.name).join(", ")}`);
-  }
+  initPlaybook();
 
   initHeartbeat(async (prompt: string) => {
     const skills = await listSkills();
@@ -265,15 +302,26 @@ async function initialize() {
     console.log(`Grant status check: hasGrant=${status.hasGrant}, tokens=${status.tokenCount}`);
   });
 
-  registerHeartbeat("evolve", 30 * 60 * 1000, async () => {
+  registerHeartbeat("playbook-curator", 2 * 60 * 60 * 1000, async () => {
     try {
-      const prompt = buildHeartbeatEvolutionPrompt();
-      if (prompt.includes("Skip evolution")) return;
+      const curatorPrompt = buildCuratorPrompt();
       const skills = await listSkills();
-      const { response } = await agentLoop(prompt, skills);
-      console.log("Evolution heartbeat:", response.slice(0, 200));
+      const { response } = await agentLoop(curatorPrompt, skills);
+
+      try {
+        const operations: CuratorOperation[] = JSON.parse(response);
+        if (Array.isArray(operations) && operations.length > 0) {
+          const { applyDeltaOperations } = await import("./playbook.js");
+          const playbook = loadPlaybook();
+          const updated = applyDeltaOperations(playbook, operations);
+          await savePlaybook(updated, "curator_update");
+          console.log(`Playbook curator: applied ${operations.length} operations`);
+        }
+      } catch {
+        console.log("Playbook curator: no changes needed");
+      }
     } catch (err) {
-      console.error("Evolution heartbeat failed:", err);
+      console.error("Playbook curator failed:", err);
     }
   });
 

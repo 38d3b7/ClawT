@@ -57,7 +57,7 @@ export async function getAgentById(id: number): Promise<Agent | null> {
 
 // ── Marketplace ──
 
-export type ListingPreview = Omit<Listing, "content">;
+export type ListingPreview = Omit<Listing, "content" | "signature">;
 
 export async function getActiveListings(
   type?: "skill" | "soul"
@@ -122,6 +122,7 @@ export async function createListing(data: {
   description: string;
   price: number;
   content: string;
+  signature?: string;
 }): Promise<string> {
   const id = crypto.randomUUID();
   await getDb()

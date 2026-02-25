@@ -14,24 +14,40 @@ export interface TaskResult {
   agentAddress: string;
 }
 
-export interface EvolutionLogEntry {
-  timestamp: number;
-  action: string;
-  path?: string;
-  summary: string;
-  signature: string;
-  riskScore: number;
+export interface PlaybookStatsData {
+  totalBullets: number;
+  highPerforming: number;
+  problematic: number;
+  unused: number;
+  approxTokens: number;
+}
+
+export interface PrincipleStatsData {
+  total: number;
+  guiding: number;
+  cautionary: number;
+  avgScore: number;
+}
+
+export interface PrincipleEntry {
+  id: string;
+  type: "guiding" | "cautionary";
+  description: string;
+  metricScore: number;
+  usageCount: number;
+  successCount: number;
+  createdAt: number;
 }
 
 export interface EvolutionData {
   stats: {
-    totalModifications: number;
-    evolvedTools: number;
-    evolvedSkills: number;
-    packagesInstalled: number;
-    totalRisk: number;
+    marketplaceSkills: number;
+    principlesLearned: number;
+    playbook: PlaybookStatsData;
+    principles: PrincipleStatsData;
   };
-  recentLog: EvolutionLogEntry[];
+  playbook: string;
+  principles: PrincipleEntry[];
 }
 
 export interface HealthData {
@@ -40,12 +56,11 @@ export interface HealthData {
   grant: { hasGrant: boolean; tokenCount: number };
   memory: { count: number; categories: Record<string, number> };
   scheduler: { heartbeats: number; tasks: number };
-  evolution: {
-    totalModifications: number;
-    evolvedTools: number;
-    evolvedSkills: number;
-    packagesInstalled: number;
-    totalRisk: number;
+  selfImprovement: {
+    marketplaceSkills: number;
+    principlesLearned: number;
+    playbook: PlaybookStatsData;
+    principles: PrincipleStatsData;
   };
   lastError: string | null;
 }

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ensureWalletClient, signSkillSubmission } from "@/lib/wallet";
 
 type ListingType = "skill" | "soul";
 
@@ -38,13 +39,28 @@ export default function SellPage() {
 
     setLoading(true);
     try {
+      let signatureJson: string | undefined;
+
+      if (type === "skill") {
+        const { address, walletClient } = await ensureWalletClient();
+        const sig = await signSkillSubmission(address, walletClient, title, content);
+        signatureJson = JSON.stringify(sig);
+      }
+
       const res = await fetch("/api/marketplace/listings", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ type, title, description, price: priceUsdc, content }),
+        body: JSON.stringify({
+          type,
+          title,
+          description,
+          price: priceUsdc,
+          content,
+          signature: signatureJson,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to create listing");
@@ -199,7 +215,13 @@ export default function SellPage() {
             disabled={!title || !description || !priceStr || !content || loading}
             className="w-full rounded-lg bg-primary px-6 py-3 font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {loading ? "Creating..." : "Create Listing"}
+            {loading
+              ? type === "skill"
+                ? "Signing & Creating..."
+                : "Creating..."
+              : type === "skill"
+                ? "Sign & Create Listing"
+                : "Create Listing"}
           </button>
         </div>
       </main>

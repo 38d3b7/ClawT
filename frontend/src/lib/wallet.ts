@@ -8,6 +8,13 @@ import {
   type PublicClient,
 } from "viem";
 import { sepolia, baseSepolia } from "viem/chains";
+import {
+  SKILL_EIP712_DOMAIN,
+  SKILL_EIP712_TYPES,
+  buildSkillMessage,
+  buildSignatureJson,
+  type SkillSignature,
+} from "@shared/skill-signing.js";
 
 const USDC_BASE_SEPOLIA = "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as const;
 const BASE_SEPOLIA_CHAIN_ID = "0x14a34";
@@ -185,6 +192,42 @@ async function switchToBaseSepolia() {
       throw new Error("Please switch to Base Sepolia to complete the purchase");
     }
   }
+}
+
+async function sha256Hex(text: string): Promise<string> {
+  const data = new TextEncoder().encode(text);
+  const buf = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+export async function computeSkillContentHash(content: string): Promise<`0x${string}`> {
+  const fileHash = await sha256Hex(content);
+  const fileEntry = `sha256:${fileHash}`;
+  const rootHash = await sha256Hex(fileEntry);
+  return `0x${rootHash}` as `0x${string}`;
+}
+
+export async function signSkillSubmission(
+  address: `0x${string}`,
+  walletClient: ReturnType<typeof createWalletClient>,
+  skillName: string,
+  content: string
+): Promise<SkillSignature> {
+  const contentHash = await computeSkillContentHash(content);
+  const timestamp = Math.floor(Date.now() / 1000);
+  const message = buildSkillMessage(skillName, contentHash, address, BigInt(timestamp));
+
+  const signature = await walletClient.signTypedData({
+    account: address,
+    domain: SKILL_EIP712_DOMAIN,
+    types: SKILL_EIP712_TYPES,
+    primaryType: "SkillSubmission" as const,
+    message,
+  });
+
+  return buildSignatureJson(skillName, address, signature, contentHash, timestamp);
 }
 
 export async function transferUSDC(
