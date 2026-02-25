@@ -5,7 +5,7 @@ import { tmpdir } from "os";
 
 const EIGENCOMPUTE_PRIVATE_KEY = process.env.EIGENCOMPUTE_PRIVATE_KEY ?? "";
 export const EIGENCOMPUTE_ENVIRONMENT = process.env.EIGENCOMPUTE_ENVIRONMENT ?? "sepolia";
-const AGENT_IMAGE_REF = process.env.AGENT_IMAGE_REF ?? "clawt/agent:latest";
+const AGENT_IMAGE_REF = process.env.AGENT_IMAGE_REF ?? "frsrventure/clawt-agent:latest";
 
 const SAFE_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/;
 const ENV_KEY_RE = /^[A-Z][A-Z0-9_]*$/;

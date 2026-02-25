@@ -81,7 +81,7 @@ export async function deployAgent(
 ) {
   const sdk = await import("@layr-labs/ecloud-sdk/browser");
   const envConfig = sdk.getEnvironmentConfig("sepolia");
-  const imageRef = process.env.NEXT_PUBLIC_AGENT_IMAGE ?? "clawt/agent:latest";
+  const imageRef = process.env.NEXT_PUBLIC_AGENT_IMAGE ?? "frsrventure/clawt-agent:latest";
 
   const { digest: digestStr, registry } = await resolveImageDigest(imageRef, opts.token);
 
@@ -169,7 +169,7 @@ export async function upgradeAgentEnv(
 ) {
   const sdk = await import("@layr-labs/ecloud-sdk/browser");
   const envConfig = sdk.getEnvironmentConfig("sepolia");
-  const imageRef = process.env.NEXT_PUBLIC_AGENT_IMAGE ?? "clawt/agent:latest";
+  const imageRef = process.env.NEXT_PUBLIC_AGENT_IMAGE ?? "frsrventure/clawt-agent:latest";
 
   const { digest: digestStr, registry } = await resolveImageDigest(imageRef, opts.token);
 
