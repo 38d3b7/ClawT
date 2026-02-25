@@ -1,6 +1,15 @@
 {
   "skills": [
     {
+      "id": "defi-yield-farmer",
+      "description": "Autonomous Aave V3 yield optimizer. Scans markets across chains, finds the best supply yields, and builds a rebalance transaction plan including withdrawals, cross-chain swaps, and deposits. Powered by PayToll.",
+      "version": "1.0.0",
+      "author": "clawt",
+      "contentHash": "sha256:388d99c8dcd8d439862d33ba6f13d29a643269152a74001015877d2dab9370d1",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
       "id": "github",
       "description": "Interact with GitHub using the gh CLI. Use gh issue, gh pr, gh run, and gh api for issues, PRs, CI runs, and advanced queries.",
       "version": "1.0.0",
@@ -35,15 +44,6 @@
       "version": "0.1.2",
       "author": "clawhub",
       "contentHash": "sha256:59fd1ea5db41399164fee181dcbc51310ac20683c25c135a298be5c1dcc1d8ed",
-      "requiresEnv": [],
-      "hasExecutionManifest": true
-    },
-    {
-      "id": "defi-yield-farmer",
-      "description": "Autonomous Aave V3 yield optimizer. Scans markets across chains every few hours, finds the best supply yields, and builds rebalance transaction plans including withdrawals, cross-chain swaps, and deposits. Powered by PayToll.",
-      "version": "1.0.0",
-      "author": "clawt",
-      "contentHash": "",
       "requiresEnv": [],
       "hasExecutionManifest": true
     },
