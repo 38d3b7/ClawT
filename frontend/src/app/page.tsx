@@ -549,7 +549,7 @@ export default function Home() {
         setWalletClients(clients);
       }
       const { generateMnemonic } = await import("@scure/bip39");
-      const { wordlist } = await import("@scure/bip39/wordlists/english");
+      const { wordlist } = await import("@scure/bip39/wordlists/english.js");
       const mnemonic = generateMnemonic(wordlist);
       const envVars: Record<string, string> = {
         MNEMONIC: mnemonic,
