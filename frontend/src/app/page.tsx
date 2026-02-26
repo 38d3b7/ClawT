@@ -628,22 +628,21 @@ export default function Home() {
     try {
       setLoading(true);
       setError("");
-      const { sendLifecycleTx, createClients } = await import("@/lib/eigencompute");
-      let clients = walletClients;
-      if (!clients) {
-        clients = await createClients();
-        setWalletClients(clients);
-      }
-      if (!agentInfo?.appId) throw new Error("No app ID");
 
       if (action === "terminate") {
-        try {
-          await sendLifecycleTx(clients, action, agentInfo.appId as `0x${string}`);
-        } catch (txErr) {
-          const msg = txErr instanceof Error ? txErr.message : String(txErr);
-          const isAlreadyTerminated =
-            /revert/i.test(msg) || /already terminated/i.test(msg) || /invalid app/i.test(msg);
-          if (!isAlreadyTerminated) throw txErr;
+        if (agentInfo?.appId) {
+          try {
+            const { sendLifecycleTx, createClients } = await import("@/lib/eigencompute");
+            let clients = walletClients;
+            if (!clients) {
+              clients = await createClients();
+              setWalletClients(clients);
+            }
+            await sendLifecycleTx(clients, action, agentInfo.appId as `0x${string}`);
+          } catch {
+            // Best-effort: agent may already be terminated on-chain, wallet
+            // unavailable, or tx rejected. DB cleanup proceeds regardless.
+          }
         }
         await updateAgentStatus(token, { status: "terminated" });
         setAgentInfo(null);
@@ -651,18 +650,26 @@ export default function Home() {
         setView("setup");
         statusCheckRef.current = false;
         runPreflightChecks(address, walletClients?.walletClient, token);
-      } else {
-        await sendLifecycleTx(clients, action, agentInfo.appId as `0x${string}`);
-        const newStatus = action === "stop" ? "stopped" : "running";
-        await updateAgentStatus(token, { status: newStatus });
-        setAgentInfo((prev) => (prev ? { ...prev, status: newStatus } : null));
+        return;
+      }
 
-        if (action === "start" && agentInfo?.appId) {
-          setAgentHealthy(null);
-          const ip = await resolveIpViaProxy(token, agentInfo.appId);
-          if (ip) {
-            setAgentInfo((prev) => (prev ? { ...prev, instanceIp: ip } : null));
-          }
+      const { sendLifecycleTx, createClients } = await import("@/lib/eigencompute");
+      let clients = walletClients;
+      if (!clients) {
+        clients = await createClients();
+        setWalletClients(clients);
+      }
+      if (!agentInfo?.appId) throw new Error("No app ID");
+      await sendLifecycleTx(clients, action, agentInfo.appId as `0x${string}`);
+      const newStatus = action === "stop" ? "stopped" : "running";
+      await updateAgentStatus(token, { status: newStatus });
+      setAgentInfo((prev) => (prev ? { ...prev, status: newStatus } : null));
+
+      if (action === "start" && agentInfo?.appId) {
+        setAgentHealthy(null);
+        const ip = await resolveIpViaProxy(token, agentInfo.appId);
+        if (ip) {
+          setAgentInfo((prev) => (prev ? { ...prev, instanceIp: ip } : null));
         }
       }
     } catch (err) {
