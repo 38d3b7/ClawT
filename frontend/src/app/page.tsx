@@ -621,7 +621,6 @@ export default function Home() {
         setAgentInfo(null);
         setSetupStep(1);
         setView("setup");
-        statusCheckRef.current = false;
         runPreflightChecks(address, walletClients?.walletClient, token);
         return;
       }
