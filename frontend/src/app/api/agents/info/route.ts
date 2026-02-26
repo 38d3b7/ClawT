@@ -13,6 +13,19 @@ export async function GET(request: Request) {
     return NextResponse.json(null, { status: 404 });
   }
 
+  let healthy: boolean | null = null;
+
+  if (agent.instanceIp && agent.status === "running") {
+    try {
+      const res = await fetch(`http://${agent.instanceIp}:3000/health`, {
+        signal: AbortSignal.timeout(3_000),
+      });
+      healthy = res.ok;
+    } catch {
+      healthy = false;
+    }
+  }
+
   return NextResponse.json({
     name: agent.name,
     status: agent.status,
@@ -20,5 +33,6 @@ export async function GET(request: Request) {
     walletAddressEth: agent.walletAddressEth,
     instanceIp: agent.instanceIp,
     createdAt: agent.createdAt,
+    healthy,
   });
 }

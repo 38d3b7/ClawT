@@ -302,6 +302,10 @@ async function initialize() {
     console.log(`Grant status check: hasGrant=${status.hasGrant}, tokens=${status.tokenCount}`);
   });
 
+  registerHeartbeat("phone-home", 5 * 60 * 1000, async () => {
+    await registerWithBackend();
+  });
+
   registerHeartbeat("playbook-curator", 2 * 60 * 60 * 1000, async () => {
     try {
       const curatorPrompt = buildCuratorPrompt();
@@ -328,12 +332,35 @@ async function initialize() {
   await fetchRegistry().catch(console.error);
 }
 
+async function discoverPublicIp(): Promise<string> {
+  let ip = "";
+  try {
+    const res = await fetch("https://api.ipify.org", { signal: AbortSignal.timeout(5_000) });
+    if (res.ok) ip = (await res.text()).trim();
+  } catch { /* non-fatal */ }
+
+  if (ip) {
+    try {
+      const selfCheck = await fetch(`http://${ip}:${PORT}/health`, {
+        signal: AbortSignal.timeout(3_000),
+      });
+      if (!selfCheck.ok) ip = "";
+    } catch {
+      console.warn(`[heartbeat] Self-check failed for ${ip}, omitting IP`);
+      ip = "";
+    }
+  }
+  return ip;
+}
+
 async function registerWithBackend(): Promise<void> {
   const backendUrl = process.env.BACKEND_URL;
   if (!backendUrl) return;
 
   const walletAddress = getAgentAddress();
   if (walletAddress === "0x0000000000000000000000000000000000000000") return;
+
+  const instanceIp = await discoverPublicIp();
 
   const timestamp = Date.now().toString();
   const message = `clawt-agent-heartbeat:${walletAddress}:${timestamp}`;
@@ -344,10 +371,10 @@ async function registerWithBackend(): Promise<void> {
       const res = await fetch(`${backendUrl}/api/agents/heartbeat-register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress, timestamp, signature }),
+        body: JSON.stringify({ walletAddress, timestamp, signature, instanceIp }),
       });
       if (res.ok) {
-        console.log("Registered with backend");
+        console.log(`Registered with backend${instanceIp ? ` (IP: ${instanceIp})` : ""}`);
         return;
       }
       console.warn(`Backend registration attempt ${attempt + 1} failed: ${res.status}`);

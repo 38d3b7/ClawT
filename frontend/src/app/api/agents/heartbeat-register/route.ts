@@ -4,7 +4,7 @@ import { verifyMessage } from "viem";
 
 export async function POST(request: Request) {
   try {
-    const { walletAddress, timestamp, signature } = await request.json();
+    const { walletAddress, timestamp, signature, instanceIp } = await request.json();
 
     if (!walletAddress || !timestamp || !signature) {
       return NextResponse.json(
@@ -51,11 +51,19 @@ export async function POST(request: Request) {
       );
 
       if (match) {
-        await updateAgent(match.id, { walletAddressEth: walletAddress.toLowerCase() });
+        await updateAgent(match.id, {
+          walletAddressEth: walletAddress.toLowerCase(),
+          ...(instanceIp && { instanceIp }),
+        });
         return NextResponse.json({ ok: true, matched: true });
       }
 
       return NextResponse.json({ error: "No matching agent found" }, { status: 404 });
+    }
+
+    const agent = rows[0];
+    if (instanceIp && instanceIp !== agent.instanceIp) {
+      await updateAgent(agent.id, { instanceIp });
     }
 
     return NextResponse.json({ ok: true });

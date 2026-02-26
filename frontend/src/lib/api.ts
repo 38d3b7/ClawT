@@ -5,6 +5,7 @@ export interface AgentInfo {
   walletAddressEth: string | null;
   instanceIp: string | null;
   createdAt: string;
+  healthy: boolean | null;
 }
 
 export interface TaskResult {
@@ -122,7 +123,7 @@ export async function registerAgent(
 
 export async function updateAgentStatus(
   token: string,
-  fields: { status?: string; instanceIp?: string; walletAddressEth?: string }
+  fields: { status?: string; instanceIp?: string | null; walletAddressEth?: string }
 ): Promise<void> {
   const res = await fetch("/api/agents/update", {
     method: "POST",
@@ -203,39 +204,6 @@ export async function getGrantStatus(
 ): Promise<{ hasGrant: boolean; tokenCount: number }> {
   const res = await fetch(`/api/auth/grant?address=${encodeURIComponent(address)}`);
   if (!res.ok) return { hasGrant: false, tokenCount: 0 };
-  return res.json();
-}
-
-interface EigenDerivedAddress {
-  address: string;
-  derivationPath: string;
-}
-
-export interface EigenAppInfo {
-  addresses?: {
-    data?: {
-      evmAddresses?: EigenDerivedAddress[];
-      solanaAddresses?: EigenDerivedAddress[];
-    };
-    signature?: string;
-  };
-  app_status: string;
-  ip: string;
-  machine_type?: string;
-}
-
-export async function getAppInfo(
-  token: string,
-  siweMessage: string,
-  siweSignature: string,
-  appIds: string[]
-): Promise<{ apps: EigenAppInfo[] }> {
-  const res = await fetch("/api/eigen/app-info", {
-    method: "POST",
-    headers: getHeaders(token),
-    body: JSON.stringify({ siweMessage, siweSignature, appIds }),
-  });
-  if (!res.ok) throw new Error("Failed to get app info");
   return res.json();
 }
 

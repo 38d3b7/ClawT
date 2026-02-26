@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const res = await fetch(`http://${agent.instanceIp}:3001/health`, {
+    const res = await fetch(`http://${agent.instanceIp}:3000/health`, {
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) {

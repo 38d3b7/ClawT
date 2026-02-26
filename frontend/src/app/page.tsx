@@ -23,7 +23,6 @@ import {
   getAgentEvolution,
   getAgentSkills,
   getAgentEnv,
-  getAppInfo,
 } from "@/lib/api";
 import type {
   AgentInfo,
@@ -187,7 +186,6 @@ export default function Home() {
   const [signingGrant, setSigningGrant] = useState(false);
   const [subscribingBilling, setSubscribingBilling] = useState(false);
   const [siweCredentials, setSiweCredentials] = useState<SiweCredentials | null>(null);
-  const [eigenSiwe, setEigenSiwe] = useState<SiweCredentials | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [walletClients, setWalletClients] = useState<any>(null);
   const initRef = useRef(false);
@@ -195,7 +193,6 @@ export default function Home() {
   const [deployPhase, setDeployPhase] = useState<"idle" | "tx-pending" | "waiting-for-ip" | "ready" | "failed">("idle");
   const [deployPollAttempt, setDeployPollAttempt] = useState(0);
   const [agentHealthy, setAgentHealthy] = useState<boolean | null>(null);
-  const [resolvingIp, setResolvingIp] = useState(false);
 
   const [dashTab, setDashTab] = useState<DashboardTab>("overview");
   const [health, setHealth] = useState<HealthData | null>(null);
@@ -212,6 +209,14 @@ export default function Home() {
   const [envSaving, setEnvSaving] = useState(false);
   const [envError, setEnvError] = useState("");
 
+  const [dashBilling, setDashBilling] = useState<{
+    active: boolean;
+    portalUrl?: string;
+    currentPeriodEnd?: string;
+    error?: string;
+  } | null>(null);
+  const [dashBillingChecking, setDashBillingChecking] = useState(false);
+
   const SYSTEM_ENV_KEYS = new Set(["MNEMONIC", "BACKEND_URL", "PORT"]);
 
   const envDirty =
@@ -219,110 +224,15 @@ export default function Home() {
     JSON.stringify(Object.keys(envVars).sort().reduce((a, k) => ({ ...a, [k]: envVars[k] }), {}));
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sessionClientRef = useRef<any>(null);
 
   const fetchDashboardData = useCallback(
     async (t: string) => {
       const [h, e] = await Promise.all([getAgentHealth(t), getAgentEvolution(t)]);
-      if (h) {
-        setHealth(h);
-        setAgentHealthy(true);
-      } else {
-        setAgentHealthy(false);
-      }
+      if (h) setHealth(h);
       if (e) setEvolution(e);
     },
     []
   );
-
-  const resolveIp = useCallback(
-    async (t: string, appId: string): Promise<string | null> => {
-      let creds = eigenSiwe;
-      if (!creds) {
-        try {
-          const { signSiweForEigen, createClients } = await import("@/lib/eigencompute");
-          let clients = walletClients;
-          if (!clients) {
-            clients = await createClients();
-            setWalletClients(clients);
-          }
-          creds = await signSiweForEigen(clients.address, clients.walletClient);
-          setEigenSiwe(creds);
-        } catch (err) {
-          console.warn("[resolveIp] SIWE sign failed:", err instanceof Error ? err.message : err);
-          return null;
-        }
-      }
-
-      if (!sessionClientRef.current) {
-        try {
-          const { createSessionApiClient, createClients } = await import("@/lib/eigencompute");
-          let clients = walletClients;
-          if (!clients) {
-            clients = await createClients();
-            setWalletClients(clients);
-          }
-          sessionClientRef.current = await createSessionApiClient(
-            clients, creds.message, creds.signature
-          );
-          console.log("[resolveIp] SDK session established");
-        } catch (err) {
-          console.warn("[resolveIp] SDK session failed:", err instanceof Error ? err.message : err);
-        }
-      }
-
-      if (sessionClientRef.current) {
-        try {
-          const [info] = await sessionClientRef.current.getInfos([appId]);
-          console.log(`[resolveIp] appId=${appId}, status=${info?.status}, ip=${info?.ip}`);
-          if (info?.status && /^terminated$/i.test(info.status)) {
-            await updateAgentStatus(t, { status: "terminated" });
-            setAgentInfo(null);
-            setView("setup");
-            return null;
-          }
-          if (info?.ip) {
-            await updateAgentStatus(t, { instanceIp: info.ip });
-            const evmAddr = info?.evmAddresses?.[0]?.address;
-            if (evmAddr) {
-              await updateAgentStatus(t, { walletAddressEth: evmAddr });
-            }
-            return info.ip;
-          }
-          return null;
-        } catch (err) {
-          console.warn("[resolveIp] SDK getInfos failed, trying proxy:", err instanceof Error ? err.message : err);
-          sessionClientRef.current = null;
-        }
-      }
-
-      try {
-        const result = await getAppInfo(t, creds.message, creds.signature, [appId]);
-        const app = result.apps?.[0];
-        if (app?.app_status && /^terminated$/i.test(app.app_status)) {
-          await updateAgentStatus(t, { status: "terminated" });
-          setAgentInfo(null);
-          setView("setup");
-          return null;
-        }
-        if (app?.ip) {
-          await updateAgentStatus(t, { instanceIp: app.ip });
-          const evmAddr = app.addresses?.data?.evmAddresses?.[0]?.address;
-          if (evmAddr) {
-            await updateAgentStatus(t, { walletAddressEth: evmAddr });
-          }
-          return app.ip;
-        }
-      } catch (err) {
-        console.warn("[resolveIp] proxy fallback failed, appId=" + appId + ":", err instanceof Error ? err.message : err);
-      }
-      return null;
-    },
-    [eigenSiwe, walletClients]
-  );
-
-  const statusCheckRef = useRef(false);
 
   useEffect(() => {
     if (view !== "dashboard" || !token) return;
@@ -335,32 +245,32 @@ export default function Home() {
       getAgentSkills(token).then(setSkills);
     }
 
-    if (!statusCheckRef.current && agentInfo?.appId && agentInfo.status === "running") {
-      statusCheckRef.current = true;
-      resolveIp(token, agentInfo.appId).catch(() => {});
-    }
-
     pollRef.current = setInterval(async () => {
-      if (!agentInfo?.instanceIp && agentInfo?.appId && agentInfo.status === "running") {
-        setResolvingIp(true);
-        const ip = await resolveIp(token, agentInfo.appId);
-        if (ip) {
-          setAgentInfo((prev) => (prev ? { ...prev, instanceIp: ip } : null));
-          setResolvingIp(false);
-          fetchDashboardData(token);
-          getAgentSkills(token).then(setSkills);
+      try {
+        const info = await getAgentInfo(token);
+        if (!info || info.status === "terminated") {
+          setAgentInfo(null);
+          setView("setup");
           return;
         }
-        setResolvingIp(false);
-      } else {
-        fetchDashboardData(token);
+
+        const justGotIp = !agentInfo?.instanceIp && info.instanceIp;
+        setAgentInfo(info);
+        setAgentHealthy(info.healthy);
+
+        if (justGotIp || hasIp) {
+          fetchDashboardData(token);
+          if (justGotIp) getAgentSkills(token).then(setSkills);
+        }
+      } catch {
+        // non-fatal: keep polling
       }
     }, pollMs);
 
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [view, token, agentInfo?.instanceIp, agentInfo?.appId, agentInfo?.status, fetchDashboardData, resolveIp]);
+  }, [view, token, agentInfo?.instanceIp, agentInfo?.appId, agentInfo?.status, fetchDashboardData]);
 
   const checkAgent = useCallback(
     async (t: string) => {
@@ -466,6 +376,29 @@ export default function Home() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSubscribingBilling(false);
+    }
+  }
+
+  async function handleDashBillingCheck() {
+    setDashBillingChecking(true);
+    try {
+      let wc = walletClients;
+      if (!wc) {
+        const result = await ensureWalletClient();
+        wc = { walletClient: result.walletClient, publicClient: result.publicClient, address: result.address as `0x${string}` };
+        setWalletClients(wc);
+      }
+      const auth = await signBillingAuth(wc.address, wc.walletClient);
+      const billing = await getBillingStatus(token, auth);
+      setDashBilling({
+        active: billing.active,
+        portalUrl: billing.portalUrl,
+        error: billing.active ? undefined : (billing.error ?? "No active subscription"),
+      });
+    } catch (err) {
+      setDashBilling({ active: false, error: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setDashBillingChecking(false);
     }
   }
 
@@ -608,9 +541,7 @@ export default function Home() {
       setDeployPhase("tx-pending");
       setDeployPollAttempt(0);
 
-      const { deployAgent, signSiweForEigen, createSessionApiClient } = await import(
-        "@/lib/eigencompute"
-      );
+      const { deployAgent } = await import("@/lib/eigencompute");
       let clients = walletClients;
       if (!clients) {
         const ec = await import("@/lib/eigencompute");
@@ -635,63 +566,23 @@ export default function Home() {
 
       setDeployPhase("waiting-for-ip");
 
-      const creds = await signSiweForEigen(clients.address, clients.walletClient);
-      setEigenSiwe(creds);
-
-      let sessionClient: Awaited<ReturnType<typeof createSessionApiClient>> | null = null;
-      try {
-        sessionClient = await createSessionApiClient(clients, creds.message, creds.signature);
-        console.log("[deploy] SDK session auth established");
-      } catch (err) {
-        console.warn(
-          "[deploy] SDK session auth failed, falling back to proxy:",
-          err instanceof Error ? err.message : err
-        );
-      }
-
       let resolved = false;
       for (let attempt = 0; attempt < 36; attempt++) {
         setDeployPollAttempt(attempt + 1);
         await new Promise((r) => setTimeout(r, 5000));
         try {
-          let ip: string | undefined;
-          let evmAddr: string | undefined;
-
-          if (sessionClient) {
-            const [info] = await sessionClient.getInfos([deployResult.appId]);
-            console.log(
-              `[deploy poll] attempt ${attempt + 1}/36, appId=${deployResult.appId}, status=${info?.status}, ip=${info?.ip}`
-            );
-            ip = info?.ip;
-            evmAddr = info?.evmAddresses?.[0]?.address;
-          } else {
-            const result = await getAppInfo(
-              token, creds.message, creds.signature, [deployResult.appId]
-            );
-            const app = result.apps?.[0];
-            console.log(
-              `[deploy poll] attempt ${attempt + 1}/36, appId=${deployResult.appId}, status=${app?.app_status}, ip=${app?.ip}`
-            );
-            ip = app?.ip;
-            evmAddr = app?.addresses?.data?.evmAddresses?.[0]?.address;
-          }
-
-          if (ip) {
-            await updateAgentStatus(token, { instanceIp: ip });
-            if (evmAddr) {
-              await updateAgentStatus(token, { walletAddressEth: evmAddr });
-            }
+          const info = await getAgentInfo(token);
+          console.log(
+            `[deploy poll] attempt ${attempt + 1}/36, appId=${deployResult.appId}, ip=${info?.instanceIp}`
+          );
+          if (info?.instanceIp) {
             resolved = true;
             break;
           }
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (/\b40[13]\b/.test(msg)) {
-            console.error("[deploy poll] Auth error, stopping:", msg);
-            break;
-          }
           console.warn(
-            `[deploy poll] attempt ${attempt + 1}/36, appId=${deployResult.appId}:`, msg
+            `[deploy poll] attempt ${attempt + 1}/36, appId=${deployResult.appId}:`,
+            err instanceof Error ? err.message : err
           );
         }
       }
@@ -744,16 +635,18 @@ export default function Home() {
       if (!agentInfo?.appId) throw new Error("No app ID");
       await sendLifecycleTx(clients, action, agentInfo.appId as `0x${string}`);
       const newStatus = action === "stop" ? "stopped" : "running";
-      await updateAgentStatus(token, { status: newStatus });
-      setAgentInfo((prev) => (prev ? { ...prev, status: newStatus } : null));
-
-      if (action === "start" && agentInfo?.appId) {
+      if (action === "start") {
         setAgentHealthy(null);
-        const ip = await resolveIp(token, agentInfo.appId);
-        if (ip) {
-          setAgentInfo((prev) => (prev ? { ...prev, instanceIp: ip } : null));
-        }
       }
+      await updateAgentStatus(token, {
+        status: newStatus,
+        ...(action === "start" && { instanceIp: null }),
+      });
+      setAgentInfo((prev) =>
+        prev
+          ? { ...prev, status: newStatus, ...(action === "start" && { instanceIp: null }) }
+          : null
+      );
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -861,7 +754,6 @@ export default function Home() {
     setToken("");
     setAgentInfo(null);
     setSiweCredentials(null);
-    setEigenSiwe(null);
     setWalletClients(null);
     setHealth(null);
     setEvolution(null);
@@ -1144,20 +1036,13 @@ export default function Home() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
-                    <span>{resolvingIp ? "Resolving agent IP..." : "Connecting to agent..."}</span>
+                    <span>Connecting to agent...</span>
                   </div>
                   <button
-                    onClick={async () => {
-                      if (!agentInfo?.appId) return;
-                      setResolvingIp(true);
-                      const ip = await resolveIp(token, agentInfo.appId);
-                      if (ip) setAgentInfo((prev) => (prev ? { ...prev, instanceIp: ip } : null));
-                      setResolvingIp(false);
-                    }}
-                    disabled={resolvingIp}
-                    className="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                    onClick={() => checkAgent(token)}
+                    className="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white transition-opacity hover:opacity-90"
                   >
-                    Resolve Now
+                    Refresh
                   </button>
                 </div>
                 <p className="mt-1 text-xs text-blue-600">Your agent is deployed but its IP hasn&apos;t been resolved yet. This will resolve automatically.</p>
@@ -1445,6 +1330,59 @@ export default function Home() {
             {/* ── Settings Tab ── */}
             {dashTab === "settings" && (
               <div className="space-y-6">
+                <div className="rounded-lg border border-border p-5">
+                  <div className="mb-3 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-medium">EigenCloud Billing</h3>
+                      <p className="mt-0.5 text-xs text-muted-foreground">Check your EigenCompute subscription status.</p>
+                    </div>
+                    {dashBilling && dashBilling.active && dashBilling.portalUrl && (
+                      <a
+                        href={dashBilling.portalUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded border border-border px-3 py-1 text-xs transition-colors hover:bg-muted"
+                      >
+                        Manage Billing
+                      </a>
+                    )}
+                  </div>
+
+                  {dashBillingChecking ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                      Checking subscription&hellip;
+                    </div>
+                  ) : dashBilling ? (
+                    <div className="flex items-center gap-2">
+                      {dashBilling.active ? (
+                        <>
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-green-100 text-green-600 text-xs">&#10003;</span>
+                          <span className="text-sm">Subscription active</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-red-600 text-xs">&#10005;</span>
+                          <span className="text-sm text-muted-foreground">{dashBilling.error ?? "No active subscription"}</span>
+                        </>
+                      )}
+                      <button
+                        onClick={handleDashBillingCheck}
+                        className="ml-auto rounded border border-border px-3 py-1 text-xs transition-colors hover:bg-muted"
+                      >
+                        Refresh
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={handleDashBillingCheck}
+                      className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+                    >
+                      Check Billing
+                    </button>
+                  )}
+                </div>
+
                 <div>
                   <h3 className="text-sm font-medium">Environment Variables</h3>
                   <p className="mt-1 text-xs text-muted-foreground">
