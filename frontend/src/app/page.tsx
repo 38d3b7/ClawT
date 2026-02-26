@@ -219,6 +219,8 @@ export default function Home() {
     JSON.stringify(Object.keys(envVars).sort().reduce((a, k) => ({ ...a, [k]: envVars[k] }), {}));
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sessionClientRef = useRef<any>(null);
 
   const fetchDashboardData = useCallback(
     async (t: string) => {
@@ -234,7 +236,7 @@ export default function Home() {
     []
   );
 
-  const resolveIpViaProxy = useCallback(
+  const resolveIp = useCallback(
     async (t: string, appId: string): Promise<string | null> => {
       let creds = eigenSiwe;
       if (!creds) {
@@ -248,10 +250,53 @@ export default function Home() {
           creds = await signSiweForEigen(clients.address, clients.walletClient);
           setEigenSiwe(creds);
         } catch (err) {
-          console.warn("[resolveIpViaProxy] SIWE sign failed:", err instanceof Error ? err.message : err);
+          console.warn("[resolveIp] SIWE sign failed:", err instanceof Error ? err.message : err);
           return null;
         }
       }
+
+      if (!sessionClientRef.current) {
+        try {
+          const { createSessionApiClient, createClients } = await import("@/lib/eigencompute");
+          let clients = walletClients;
+          if (!clients) {
+            clients = await createClients();
+            setWalletClients(clients);
+          }
+          sessionClientRef.current = await createSessionApiClient(
+            clients, creds.message, creds.signature
+          );
+          console.log("[resolveIp] SDK session established");
+        } catch (err) {
+          console.warn("[resolveIp] SDK session failed:", err instanceof Error ? err.message : err);
+        }
+      }
+
+      if (sessionClientRef.current) {
+        try {
+          const [info] = await sessionClientRef.current.getInfos([appId]);
+          console.log(`[resolveIp] appId=${appId}, status=${info?.status}, ip=${info?.ip}`);
+          if (info?.status && /^terminated$/i.test(info.status)) {
+            await updateAgentStatus(t, { status: "terminated" });
+            setAgentInfo(null);
+            setView("setup");
+            return null;
+          }
+          if (info?.ip) {
+            await updateAgentStatus(t, { instanceIp: info.ip });
+            const evmAddr = info?.evmAddresses?.[0]?.address;
+            if (evmAddr) {
+              await updateAgentStatus(t, { walletAddressEth: evmAddr });
+            }
+            return info.ip;
+          }
+          return null;
+        } catch (err) {
+          console.warn("[resolveIp] SDK getInfos failed, trying proxy:", err instanceof Error ? err.message : err);
+          sessionClientRef.current = null;
+        }
+      }
+
       try {
         const result = await getAppInfo(t, creds.message, creds.signature, [appId]);
         const app = result.apps?.[0];
@@ -270,7 +315,7 @@ export default function Home() {
           return app.ip;
         }
       } catch (err) {
-        console.warn("[resolveIpViaProxy] appId=" + appId + ":", err instanceof Error ? err.message : err);
+        console.warn("[resolveIp] proxy fallback failed, appId=" + appId + ":", err instanceof Error ? err.message : err);
       }
       return null;
     },
@@ -292,13 +337,13 @@ export default function Home() {
 
     if (!statusCheckRef.current && agentInfo?.appId && agentInfo.status === "running") {
       statusCheckRef.current = true;
-      resolveIpViaProxy(token, agentInfo.appId).catch(() => {});
+      resolveIp(token, agentInfo.appId).catch(() => {});
     }
 
     pollRef.current = setInterval(async () => {
       if (!agentInfo?.instanceIp && agentInfo?.appId && agentInfo.status === "running") {
         setResolvingIp(true);
-        const ip = await resolveIpViaProxy(token, agentInfo.appId);
+        const ip = await resolveIp(token, agentInfo.appId);
         if (ip) {
           setAgentInfo((prev) => (prev ? { ...prev, instanceIp: ip } : null));
           setResolvingIp(false);
@@ -315,7 +360,7 @@ export default function Home() {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [view, token, agentInfo?.instanceIp, agentInfo?.appId, agentInfo?.status, fetchDashboardData, resolveIpViaProxy]);
+  }, [view, token, agentInfo?.instanceIp, agentInfo?.appId, agentInfo?.status, fetchDashboardData, resolveIp]);
 
   const checkAgent = useCallback(
     async (t: string) => {
@@ -704,7 +749,7 @@ export default function Home() {
 
       if (action === "start" && agentInfo?.appId) {
         setAgentHealthy(null);
-        const ip = await resolveIpViaProxy(token, agentInfo.appId);
+        const ip = await resolveIp(token, agentInfo.appId);
         if (ip) {
           setAgentInfo((prev) => (prev ? { ...prev, instanceIp: ip } : null));
         }
@@ -1105,7 +1150,7 @@ export default function Home() {
                     onClick={async () => {
                       if (!agentInfo?.appId) return;
                       setResolvingIp(true);
-                      const ip = await resolveIpViaProxy(token, agentInfo.appId);
+                      const ip = await resolveIp(token, agentInfo.appId);
                       if (ip) setAgentInfo((prev) => (prev ? { ...prev, instanceIp: ip } : null));
                       setResolvingIp(false);
                     }}
