@@ -344,10 +344,9 @@ async function discoverPublicIp(): Promise<string> {
       const selfCheck = await fetch(`http://${ip}:${PORT}/health`, {
         signal: AbortSignal.timeout(3_000),
       });
-      if (!selfCheck.ok) ip = "";
+      if (!selfCheck.ok) console.warn(`[heartbeat] Self-check returned ${selfCheck.status} for ${ip}`);
     } catch {
-      console.warn(`[heartbeat] Self-check failed for ${ip}, omitting IP`);
-      ip = "";
+      console.warn(`[heartbeat] Self-check unreachable for ${ip} (NAT hairpin likely), sending IP anyway`);
     }
   }
   return ip;
