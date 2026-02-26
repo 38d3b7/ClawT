@@ -630,18 +630,13 @@ export default function Home() {
       setError("");
 
       if (action === "terminate") {
-        if (agentInfo?.appId) {
+        if (agentInfo?.appId && walletClients) {
           try {
-            const { sendLifecycleTx, createClients } = await import("@/lib/eigencompute");
-            let clients = walletClients;
-            if (!clients) {
-              clients = await createClients();
-              setWalletClients(clients);
-            }
-            await sendLifecycleTx(clients, action, agentInfo.appId as `0x${string}`);
+            const { sendLifecycleTx } = await import("@/lib/eigencompute");
+            await sendLifecycleTx(walletClients, action, agentInfo.appId as `0x${string}`);
           } catch {
-            // Best-effort: agent may already be terminated on-chain, wallet
-            // unavailable, or tx rejected. DB cleanup proceeds regardless.
+            // Best-effort: agent may already be terminated on-chain or tx
+            // rejected. DB cleanup proceeds regardless.
           }
         }
         await updateAgentStatus(token, { status: "terminated" });
