@@ -5,7 +5,9 @@ import { ExactEvmScheme } from "@x402/evm/exact/server";
 
 const FACILITATOR_URL =
   process.env.X402_FACILITATOR_URL ?? "https://x402.org/facilitator";
-const BASE_SEPOLIA_NETWORK = "eip155:84532" as const;
+import { MARKETPLACE_CHAIN } from "@/lib/network-config";
+
+const MARKETPLACE_NETWORK = `eip155:${MARKETPLACE_CHAIN.id}` as const;
 
 const facilitatorClient = new HTTPFacilitatorClient({ url: FACILITATOR_URL });
 const server = new x402ResourceServer(facilitatorClient);
@@ -38,7 +40,7 @@ export async function GET(
     scheme: "exact",
     payTo: listing.sellerAddress,
     price: priceUsd,
-    network: BASE_SEPOLIA_NETWORK,
+    network: MARKETPLACE_NETWORK,
   };
 
   const resourceInfo = {

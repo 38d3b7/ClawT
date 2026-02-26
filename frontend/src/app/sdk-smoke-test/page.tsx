@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { EIGEN_CHAIN, EIGEN_ENVIRONMENT, KMS_BUILD } from "@/lib/network-config";
 
 interface TestResult {
   name: string;
@@ -57,7 +58,7 @@ export default function SdkSmokeTest() {
 
     try {
       const t1 = performance.now();
-      const config = sdk.getEnvironmentConfig("sepolia");
+      const config = sdk.getEnvironmentConfig(EIGEN_ENVIRONMENT);
       update(setResults, "getEnvironmentConfig", {
         status: "pass",
         detail: `name=${config.name}, chainID=${config.chainID}, userAPI=${config.userApiServerURL}`,
@@ -73,7 +74,7 @@ export default function SdkSmokeTest() {
     let encryptionKey: Buffer | null = null;
     try {
       const t2 = performance.now();
-      const keys = sdk.getKMSKeysForEnvironment("sepolia", "prod");
+      const keys = sdk.getKMSKeysForEnvironment(EIGEN_ENVIRONMENT, KMS_BUILD);
       encryptionKey = keys.encryptionKey;
       update(setResults, "getKMSKeysForEnvironment", {
         status: "pass",
@@ -182,7 +183,6 @@ export default function SdkSmokeTest() {
 
     const sdk = await import("@layr-labs/ecloud-sdk/browser");
     const viem = await import("viem");
-    const { sepolia } = await import("viem/chains");
 
     // Step 1: Connect MetaMask
     let address: `0x${string}`;
@@ -215,16 +215,16 @@ export default function SdkSmokeTest() {
       const t1 = performance.now();
       walletClient = viem.createWalletClient({
         account: address,
-        chain: sepolia,
+        chain: EIGEN_CHAIN,
         transport: viem.custom(window.ethereum),
       });
       publicClient = viem.createPublicClient({
-        chain: sepolia,
+        chain: EIGEN_CHAIN,
         transport: viem.custom(window.ethereum),
       });
       u("Create viem clients", {
         status: "pass",
-        detail: `wallet: ${walletClient.account?.address}, chain: ${sepolia.name}`,
+        detail: `wallet: ${walletClient.account?.address}, chain: ${EIGEN_CHAIN.name}`,
         ms: Math.round(performance.now() - t1),
       });
     } catch (err) {
@@ -243,7 +243,7 @@ export default function SdkSmokeTest() {
       const t2 = performance.now();
       const siwe = sdk.createSiweMessage({
         address,
-        chainId: sepolia.id,
+        chainId: EIGEN_CHAIN.id,
         domain: window.location.host,
         uri: window.location.origin,
         statement: "Sign in to CLAWT (cookie test)",
@@ -274,7 +274,7 @@ export default function SdkSmokeTest() {
     }
 
     // Step 4: Login to compute API (separate from billing to isolate CORS issues)
-    const envConfig = sdk.getEnvironmentConfig("sepolia");
+    const envConfig = sdk.getEnvironmentConfig(EIGEN_ENVIRONMENT);
     const billingConfig = sdk.getBillingEnvironmentConfig("prod");
     let computeLoginOk = false;
     let billingLoginOk = false;

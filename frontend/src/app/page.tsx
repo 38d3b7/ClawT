@@ -23,6 +23,7 @@ import {
   getAgentEvolution,
   getAgentSkills,
   getAgentEnv,
+  getAppInfo,
 } from "@/lib/api";
 import type {
   AgentInfo,
@@ -34,8 +35,6 @@ import type {
 import { STARTER_SOULS } from "@/lib/souls";
 import type { Soul } from "@/lib/souls";
 import Link from "next/link";
-import { generateMnemonic } from "@scure/bip39";
-import { wordlist } from "@scure/bip39/wordlists/english.js";
 
 type View = "landing" | "setup" | "dashboard" | "loading";
 type DashboardTab = "overview" | "evolution" | "tools" | "identity" | "settings";
@@ -188,9 +187,15 @@ export default function Home() {
   const [signingGrant, setSigningGrant] = useState(false);
   const [subscribingBilling, setSubscribingBilling] = useState(false);
   const [siweCredentials, setSiweCredentials] = useState<SiweCredentials | null>(null);
+  const [eigenSiwe, setEigenSiwe] = useState<SiweCredentials | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [walletClients, setWalletClients] = useState<any>(null);
   const initRef = useRef(false);
+
+  const [deployPhase, setDeployPhase] = useState<"idle" | "tx-pending" | "waiting-for-ip" | "ready" | "failed">("idle");
+  const [deployPollAttempt, setDeployPollAttempt] = useState(0);
+  const [agentHealthy, setAgentHealthy] = useState<boolean | null>(null);
+  const [resolvingIp, setResolvingIp] = useState(false);
 
   const [dashTab, setDashTab] = useState<DashboardTab>("overview");
   const [health, setHealth] = useState<HealthData | null>(null);
@@ -218,23 +223,83 @@ export default function Home() {
   const fetchDashboardData = useCallback(
     async (t: string) => {
       const [h, e] = await Promise.all([getAgentHealth(t), getAgentEvolution(t)]);
-      if (h) setHealth(h);
+      if (h) {
+        setHealth(h);
+        setAgentHealthy(true);
+      } else {
+        setAgentHealthy(false);
+      }
       if (e) setEvolution(e);
     },
     []
   );
 
+  const resolveIpViaProxy = useCallback(
+    async (t: string, appId: string): Promise<string | null> => {
+      let creds = eigenSiwe;
+      if (!creds) {
+        try {
+          const { signSiweForEigen, createClients } = await import("@/lib/eigencompute");
+          let clients = walletClients;
+          if (!clients) {
+            clients = await createClients();
+            setWalletClients(clients);
+          }
+          creds = await signSiweForEigen(clients.address, clients.walletClient);
+          setEigenSiwe(creds);
+        } catch {
+          return null;
+        }
+      }
+      try {
+        const result = await getAppInfo(t, creds.message, creds.signature, [appId]);
+        const app = result.apps?.[0];
+        if (app?.ip) {
+          await updateAgentStatus(t, { instanceIp: app.ip });
+          const evmAddr = app.addresses?.data?.evmAddresses?.[0]?.address;
+          if (evmAddr) {
+            await updateAgentStatus(t, { walletAddressEth: evmAddr });
+          }
+          return app.ip;
+        }
+      } catch { /* resolution failed, will retry */ }
+      return null;
+    },
+    [eigenSiwe, walletClients]
+  );
+
   useEffect(() => {
     if (view !== "dashboard" || !token) return;
 
-    fetchDashboardData(token);
-    getAgentSkills(token).then(setSkills);
+    const hasIp = !!agentInfo?.instanceIp;
+    const pollMs = hasIp ? 15_000 : 5_000;
 
-    pollRef.current = setInterval(() => fetchDashboardData(token), 15000);
+    if (hasIp) {
+      fetchDashboardData(token);
+      getAgentSkills(token).then(setSkills);
+    }
+
+    pollRef.current = setInterval(async () => {
+      if (!agentInfo?.instanceIp && agentInfo?.appId && agentInfo.status === "running") {
+        setResolvingIp(true);
+        const ip = await resolveIpViaProxy(token, agentInfo.appId);
+        if (ip) {
+          setAgentInfo((prev) => (prev ? { ...prev, instanceIp: ip } : null));
+          setResolvingIp(false);
+          fetchDashboardData(token);
+          getAgentSkills(token).then(setSkills);
+          return;
+        }
+        setResolvingIp(false);
+      } else {
+        fetchDashboardData(token);
+      }
+    }, pollMs);
+
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [view, token, fetchDashboardData]);
+  }, [view, token, agentInfo?.instanceIp, agentInfo?.appId, agentInfo?.status, fetchDashboardData, resolveIpViaProxy]);
 
   const checkAgent = useCallback(
     async (t: string) => {
@@ -479,16 +544,17 @@ export default function Home() {
     try {
       setError("");
       setLoading(true);
-      const { deployAgent } = await import("@/lib/eigencompute");
+      setDeployPhase("tx-pending");
+      setDeployPollAttempt(0);
+
+      const { deployAgent, signSiweForEigen } = await import("@/lib/eigencompute");
       let clients = walletClients;
       if (!clients) {
         const ec = await import("@/lib/eigencompute");
         clients = await ec.createClients();
         setWalletClients(clients);
       }
-      const mnemonic = generateMnemonic(wordlist);
       const envVars: Record<string, string> = {
-        MNEMONIC: mnemonic,
         BACKEND_URL: window.location.origin,
         AGENT_SOUL: selectedSoul.content,
       };
@@ -499,9 +565,46 @@ export default function Home() {
       }
       const ecloudName = `clawt-${address.slice(2, 10).toLowerCase()}`;
       const deployResult = await deployAgent(clients, envVars, { name: ecloudName, token });
-      await registerAgent(token, { name: agentName, appId: deployResult.appId });
+      await registerAgent(token, {
+        name: agentName,
+        appId: deployResult.appId,
+      });
+
+      setDeployPhase("waiting-for-ip");
+
+      const creds = await signSiweForEigen(clients.address, clients.walletClient);
+      setEigenSiwe(creds);
+
+      let resolved = false;
+      for (let attempt = 0; attempt < 36; attempt++) {
+        setDeployPollAttempt(attempt + 1);
+        await new Promise((r) => setTimeout(r, 5000));
+        try {
+          const result = await getAppInfo(token, creds.message, creds.signature, [deployResult.appId]);
+          const app = result.apps?.[0];
+          if (app?.ip) {
+            await updateAgentStatus(token, { instanceIp: app.ip });
+            const evmAddr = app.addresses?.data?.evmAddresses?.[0]?.address;
+            if (evmAddr) {
+              await updateAgentStatus(token, { walletAddressEth: evmAddr });
+            }
+            resolved = true;
+            break;
+          }
+        } catch {
+          /* container still booting */
+        }
+      }
+
+      if (resolved) {
+        setDeployPhase("ready");
+      } else {
+        setDeployPhase("failed");
+      }
+
       await checkAgent(token);
     } catch (err) {
+      setDeployPhase("failed");
       setError((err as Error).message);
     } finally {
       setLoading(false);
@@ -529,6 +632,14 @@ export default function Home() {
         runPreflightChecks(address, walletClients?.walletClient, token);
       } else {
         setAgentInfo((prev) => (prev ? { ...prev, status: newStatus } : null));
+
+        if (action === "start" && agentInfo?.appId) {
+          setAgentHealthy(null);
+          const ip = await resolveIpViaProxy(token, agentInfo.appId);
+          if (ip) {
+            setAgentInfo((prev) => (prev ? { ...prev, instanceIp: ip } : null));
+          }
+        }
       }
     } catch (err) {
       setError((err as Error).message);
@@ -637,9 +748,11 @@ export default function Home() {
     setToken("");
     setAgentInfo(null);
     setSiweCredentials(null);
+    setEigenSiwe(null);
     setWalletClients(null);
     setHealth(null);
     setEvolution(null);
+    setAgentHealthy(null);
     setView("landing");
   }
 
@@ -864,7 +977,7 @@ export default function Home() {
         {/* ── Setup Step 3: Name & Deploy ── */}
         {view === "setup" && setupStep === 3 && (
           <div className="mx-auto max-w-md pt-10">
-            <button onClick={() => setSetupStep(2)} className="mb-4 text-sm text-muted-foreground transition-colors hover:text-foreground">&larr; Back</button>
+            <button onClick={() => setSetupStep(2)} disabled={loading} className="mb-4 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50">&larr; Back</button>
             <h2 className="mb-1 text-xl font-semibold">Deploy Agent</h2>
             <p className="mb-2 text-sm text-muted-foreground">
               Soul: <span className="font-medium text-foreground">{selectedSoul.name}</span>
@@ -875,10 +988,36 @@ export default function Home() {
               placeholder="Agent name (e.g. my-defi-agent)"
               value={agentName}
               onChange={(e) => setAgentName(e.target.value)}
-              className="mb-4 w-full rounded-lg border border-border bg-background px-4 py-3 text-sm outline-none transition-colors focus:border-primary"
+              disabled={loading}
+              className="mb-4 w-full rounded-lg border border-border bg-background px-4 py-3 text-sm outline-none transition-colors focus:border-primary disabled:opacity-50"
             />
+
+            {deployPhase === "waiting-for-ip" && (
+              <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+                <div className="flex items-center gap-2">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+                  <span>Waiting for agent to come online... ({deployPollAttempt}/36)</span>
+                </div>
+                <p className="mt-1 text-xs text-blue-600">TEE provisioning can take a few minutes.</p>
+              </div>
+            )}
+
+            {deployPhase === "failed" && !error && (
+              <div className="mb-4 rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-700">
+                <p>Agent deployed but not yet reachable. The dashboard will keep trying to connect.</p>
+                <button
+                  onClick={() => { setDeployPhase("idle"); checkAgent(token); }}
+                  className="mt-2 rounded bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+                >
+                  Continue to Dashboard
+                </button>
+              </div>
+            )}
+
             <button onClick={handleDeploy} disabled={!agentName || loading} className="w-full rounded-lg bg-primary px-6 py-3 font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50">
-              {loading ? "Deploying (confirm in MetaMask)..." : "Deploy"}
+              {deployPhase === "tx-pending" ? "Confirming on-chain (check MetaMask)..." :
+                deployPhase === "waiting-for-ip" ? "Connecting to agent..." :
+                loading ? "Deploying..." : "Deploy"}
             </button>
           </div>
         )}
@@ -886,22 +1025,74 @@ export default function Home() {
         {/* ── Dashboard ── */}
         {view === "dashboard" && (
           <div className="space-y-6">
+            {/* IP resolution banner */}
+            {agentStatus === "running" && !agentInfo?.instanceIp && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+                    <span>{resolvingIp ? "Resolving agent IP..." : "Connecting to agent..."}</span>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!agentInfo?.appId) return;
+                      setResolvingIp(true);
+                      const ip = await resolveIpViaProxy(token, agentInfo.appId);
+                      if (ip) setAgentInfo((prev) => (prev ? { ...prev, instanceIp: ip } : null));
+                      setResolvingIp(false);
+                    }}
+                    disabled={resolvingIp}
+                    className="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  >
+                    Resolve Now
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-blue-600">Your agent is deployed but its IP hasn&apos;t been resolved yet. This will resolve automatically.</p>
+              </div>
+            )}
+
             {/* Header */}
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold">{agentInfo?.name ?? "Your Agent"}</h2>
-                {agentInfo?.walletAddressEth && (
+                {agentInfo?.walletAddressEth ? (
                   <p className="mt-1 font-mono text-xs text-muted-foreground">{agentInfo.walletAddressEth}</p>
-                )}
+                ) : agentStatus === "deploying" ? (
+                  <p className="mt-1 text-xs text-muted-foreground">Wallet: awaiting TEE attestation...</p>
+                ) : null}
               </div>
               <div className="flex items-center gap-3">
-                <span className={`rounded-full px-3 py-1 text-xs font-medium ${
-                  agentStatus === "running" ? "bg-green-100 text-green-700"
-                    : agentStatus === "stopped" ? "bg-yellow-100 text-yellow-700"
-                      : "bg-gray-100 text-gray-600"
-                }`}>
-                  {agentStatus}
-                </span>
+                {(() => {
+                  let statusLabel: string;
+                  let statusClass: string;
+                  if (agentStatus === "running" && !agentInfo?.instanceIp) {
+                    statusLabel = "Connecting...";
+                    statusClass = "bg-blue-100 text-blue-700";
+                  } else if (agentStatus === "running" && agentHealthy === false) {
+                    statusLabel = "Unreachable";
+                    statusClass = "bg-red-100 text-red-700";
+                  } else if (agentStatus === "running" && agentHealthy === true) {
+                    statusLabel = "Online";
+                    statusClass = "bg-green-100 text-green-700";
+                  } else if (agentStatus === "running") {
+                    statusLabel = "Running";
+                    statusClass = "bg-green-100 text-green-700";
+                  } else if (agentStatus === "stopped") {
+                    statusLabel = "Offline";
+                    statusClass = "bg-yellow-100 text-yellow-700";
+                  } else if (agentStatus === "deploying") {
+                    statusLabel = "Starting...";
+                    statusClass = "bg-blue-100 text-blue-700";
+                  } else {
+                    statusLabel = agentStatus;
+                    statusClass = "bg-gray-100 text-gray-600";
+                  }
+                  return (
+                    <span className={`rounded-full px-3 py-1 text-xs font-medium ${statusClass}`}>
+                      {statusLabel}
+                    </span>
+                  );
+                })()}
                 <div className="flex gap-1">
                   {agentStatus === "running" ? (
                     <button onClick={() => handleLifecycle("stop")} disabled={loading} className="rounded border border-border px-3 py-1 text-xs transition-colors hover:bg-muted disabled:opacity-50">Stop</button>

@@ -7,7 +7,7 @@ import {
   type PublicClient,
   type Hex,
 } from "viem";
-import { sepolia } from "viem/chains";
+import { EIGEN_CHAIN, EIGEN_ENVIRONMENT, KMS_BUILD } from "./network-config";
 
 export type EigenClients = {
   walletClient: WalletClient;
@@ -25,11 +25,11 @@ export async function createClients(): Promise<EigenClients> {
 
   const walletClient = createWalletClient({
     account: address,
-    chain: sepolia,
+    chain: EIGEN_CHAIN,
     transport: custom(window.ethereum),
   });
   const publicClient = createPublicClient({
-    chain: sepolia,
+    chain: EIGEN_CHAIN,
     transport: custom(window.ethereum),
   });
 
@@ -43,7 +43,7 @@ export async function signSiweForEigen(
   const sdk = await import("@layr-labs/ecloud-sdk/browser");
   const siwe = sdk.createSiweMessage({
     address,
-    chainId: sepolia.id,
+    chainId: EIGEN_CHAIN.id,
     domain: window.location.host,
     uri: window.location.origin,
     statement: "Sign in to CLAWT",
@@ -80,7 +80,7 @@ export async function deployAgent(
   opts: { name: string; token: string }
 ) {
   const sdk = await import("@layr-labs/ecloud-sdk/browser");
-  const envConfig = sdk.getEnvironmentConfig("sepolia");
+  const envConfig = sdk.getEnvironmentConfig(EIGEN_ENVIRONMENT);
   const imageRef = process.env.NEXT_PUBLIC_AGENT_IMAGE ?? "frsrventure/clawt-agent:latest";
 
   const { digest: digestStr, registry } = await resolveImageDigest(imageRef, opts.token);
@@ -102,7 +102,7 @@ export async function deployAgent(
     salt,
   });
 
-  const keys = sdk.getKMSKeysForEnvironment("sepolia", "prod");
+  const keys = sdk.getKMSKeysForEnvironment(EIGEN_ENVIRONMENT, KMS_BUILD);
   const protectedHeaders = sdk.getAppProtectedHeaders(appId);
   const plaintext = Buffer.from(JSON.stringify(envVars));
   const encryptedEnvStr = await sdk.encryptRSAOAEPAndAES256GCM(
@@ -168,7 +168,7 @@ export async function upgradeAgentEnv(
   opts: { token: string }
 ) {
   const sdk = await import("@layr-labs/ecloud-sdk/browser");
-  const envConfig = sdk.getEnvironmentConfig("sepolia");
+  const envConfig = sdk.getEnvironmentConfig(EIGEN_ENVIRONMENT);
   const imageRef = process.env.NEXT_PUBLIC_AGENT_IMAGE ?? "frsrventure/clawt-agent:latest";
 
   const { digest: digestStr, registry } = await resolveImageDigest(imageRef, opts.token);
@@ -181,7 +181,7 @@ export async function upgradeAgentEnv(
     throw new Error(`Digest must be 32 bytes, got ${digestBytes.length}`);
   }
 
-  const keys = sdk.getKMSKeysForEnvironment("sepolia", "prod");
+  const keys = sdk.getKMSKeysForEnvironment(EIGEN_ENVIRONMENT, KMS_BUILD);
   const protectedHeaders = sdk.getAppProtectedHeaders(appId);
   const plaintext = Buffer.from(JSON.stringify(envVars));
   const encryptedEnvStr = await sdk.encryptRSAOAEPAndAES256GCM(
@@ -221,13 +221,21 @@ export async function upgradeAgentEnv(
   return txHash;
 }
 
+export async function getAppInfoDirect(clients: EigenClients, appId: `0x${string}`) {
+  const sdk = await import("@layr-labs/ecloud-sdk/browser");
+  const envConfig = sdk.getEnvironmentConfig(EIGEN_ENVIRONMENT);
+  const apiClient = new sdk.UserApiClient(envConfig, clients.walletClient, clients.publicClient);
+  const [info] = await apiClient.getInfos([appId]);
+  return info;
+}
+
 export async function sendLifecycleTx(
   clients: EigenClients,
   action: "start" | "stop" | "terminate",
   appId: `0x${string}`
 ) {
   const sdk = await import("@layr-labs/ecloud-sdk/browser");
-  const envConfig = sdk.getEnvironmentConfig("sepolia");
+  const envConfig = sdk.getEnvironmentConfig(EIGEN_ENVIRONMENT);
 
   const encoders = {
     start: sdk.encodeStartAppData,
@@ -241,7 +249,7 @@ export async function sendLifecycleTx(
     account: clients.address,
     to: envConfig.appControllerAddress as `0x${string}`,
     data,
-    chain: sepolia,
+    chain: EIGEN_CHAIN,
   });
 
   await clients.publicClient.waitForTransactionReceipt({ hash });

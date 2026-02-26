@@ -206,12 +206,30 @@ export async function getGrantStatus(
   return res.json();
 }
 
+interface EigenDerivedAddress {
+  address: string;
+  derivationPath: string;
+}
+
+export interface EigenAppInfo {
+  addresses?: {
+    data?: {
+      evmAddresses?: EigenDerivedAddress[];
+      solanaAddresses?: EigenDerivedAddress[];
+    };
+    signature?: string;
+  };
+  app_status: string;
+  ip: string;
+  machine_type?: string;
+}
+
 export async function getAppInfo(
   token: string,
   siweMessage: string,
   siweSignature: string,
   appIds: string[]
-): Promise<{ apps: Array<{ address: string; status: string; ip: string }> }> {
+): Promise<{ apps: EigenAppInfo[] }> {
   const res = await fetch("/api/eigen/app-info", {
     method: "POST",
     headers: getHeaders(token),

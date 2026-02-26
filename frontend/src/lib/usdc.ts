@@ -1,11 +1,13 @@
 import { createPublicClient, http, decodeEventLog, erc20Abi } from "viem";
-import { baseSepolia } from "viem/chains";
-
-const USDC_BASE_SEPOLIA = "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as const;
+import {
+  MARKETPLACE_CHAIN,
+  MARKETPLACE_CHAIN_RPC,
+  USDC_ADDRESS,
+} from "./network-config";
 
 const client = createPublicClient({
-  chain: baseSepolia,
-  transport: http("https://sepolia.base.org"),
+  chain: MARKETPLACE_CHAIN,
+  transport: http(MARKETPLACE_CHAIN_RPC),
 });
 
 export async function verifyUSDCTransfer(
@@ -20,7 +22,7 @@ export async function verifyUSDCTransfer(
   }
 
   for (const log of receipt.logs) {
-    if (log.address.toLowerCase() !== USDC_BASE_SEPOLIA.toLowerCase()) continue;
+    if (log.address.toLowerCase() !== USDC_ADDRESS.toLowerCase()) continue;
 
     try {
       const decoded = decodeEventLog({

@@ -328,9 +328,40 @@ async function initialize() {
   await fetchRegistry().catch(console.error);
 }
 
+async function registerWithBackend(): Promise<void> {
+  const backendUrl = process.env.BACKEND_URL;
+  if (!backendUrl) return;
+
+  const walletAddress = getAgentAddress();
+  if (walletAddress === "0x0000000000000000000000000000000000000000") return;
+
+  const timestamp = Date.now().toString();
+  const message = `clawt-agent-heartbeat:${walletAddress}:${timestamp}`;
+  const signature = await signMessage(message);
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const res = await fetch(`${backendUrl}/api/agents/heartbeat-register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress, timestamp, signature }),
+      });
+      if (res.ok) {
+        console.log("Registered with backend");
+        return;
+      }
+      console.warn(`Backend registration attempt ${attempt + 1} failed: ${res.status}`);
+    } catch (err) {
+      console.warn(`Backend registration attempt ${attempt + 1} error:`, err);
+    }
+    await new Promise((r) => setTimeout(r, 5000 * (attempt + 1)));
+  }
+}
+
 initialize().then(() => {
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Agent listening on 0.0.0.0:${PORT}`);
     console.log(`Wallet: ${getAgentAddress()}`);
+    registerWithBackend().catch(console.error);
   });
 });

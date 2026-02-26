@@ -7,17 +7,26 @@ import {
   type WalletClient,
   type PublicClient,
 } from "viem";
-import { sepolia, baseSepolia } from "viem/chains";
 import {
   SKILL_EIP712_DOMAIN,
   SKILL_EIP712_TYPES,
   buildSkillMessage,
   buildSignatureJson,
   type SkillSignature,
-} from "@shared/skill-signing.js";
-
-const USDC_BASE_SEPOLIA = "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as const;
-const BASE_SEPOLIA_CHAIN_ID = "0x14a34";
+} from "./skill-signing";
+import {
+  EIGEN_CHAIN,
+  EIGEN_CHAIN_HEX,
+  EIGEN_CHAIN_NAME,
+  EIGEN_CHAIN_RPC,
+  EIGEN_CHAIN_EXPLORER,
+  MARKETPLACE_CHAIN,
+  MARKETPLACE_CHAIN_HEX,
+  MARKETPLACE_CHAIN_NAME,
+  MARKETPLACE_CHAIN_RPC,
+  MARKETPLACE_CHAIN_EXPLORER,
+  USDC_ADDRESS,
+} from "./network-config";
 
 declare global {
   interface Window {
@@ -58,7 +67,7 @@ async function resolveWalletClients() {
   try {
     await window.ethereum.request({
       method: "wallet_switchEthereumChain",
-      params: [{ chainId: "0xaa36a7" }],
+      params: [{ chainId: EIGEN_CHAIN_HEX }],
     });
   } catch (err: unknown) {
     if ((err as { code?: number }).code === 4902) {
@@ -66,26 +75,26 @@ async function resolveWalletClients() {
         method: "wallet_addEthereumChain",
         params: [
           {
-            chainId: "0xaa36a7",
-            chainName: "Sepolia",
+            chainId: EIGEN_CHAIN_HEX,
+            chainName: EIGEN_CHAIN_NAME,
             nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
-            rpcUrls: ["https://rpc.sepolia.org"],
-            blockExplorerUrls: ["https://sepolia.etherscan.io"],
+            rpcUrls: [EIGEN_CHAIN_RPC],
+            blockExplorerUrls: [EIGEN_CHAIN_EXPLORER],
           },
         ],
       });
     } else {
-      throw new Error("Please switch to the Sepolia network to continue");
+      throw new Error(`Please switch to ${EIGEN_CHAIN_NAME} to continue`);
     }
   }
 
   const walletClient = createWalletClient({
     account: address,
-    chain: sepolia,
+    chain: EIGEN_CHAIN,
     transport: custom(window.ethereum),
   });
   const publicClient = createPublicClient({
-    chain: sepolia,
+    chain: EIGEN_CHAIN,
     transport: custom(window.ethereum),
   });
 
@@ -107,7 +116,7 @@ export async function signSiweMessage(address: `0x${string}`, walletClient: Retu
 
   const siwe = sdk.createSiweMessage({
     address,
-    chainId: sepolia.id,
+    chainId: EIGEN_CHAIN.id,
     domain: window.location.host,
     uri: window.location.origin,
     statement: "Sign in to CLAWT",
@@ -155,7 +164,7 @@ export async function signGrantMessage(address: string) {
 
   const walletClient = createWalletClient({
     account: address as `0x${string}`,
-    chain: sepolia,
+    chain: EIGEN_CHAIN,
     transport: custom(window.ethereum),
   });
 
@@ -167,12 +176,12 @@ export async function signGrantMessage(address: string) {
   return { grantMessage: message, grantSignature: signature };
 }
 
-async function switchToBaseSepolia() {
+async function switchToMarketplaceChain() {
   if (!window.ethereum) throw new Error("MetaMask not installed");
   try {
     await window.ethereum.request({
       method: "wallet_switchEthereumChain",
-      params: [{ chainId: BASE_SEPOLIA_CHAIN_ID }],
+      params: [{ chainId: MARKETPLACE_CHAIN_HEX }],
     });
   } catch (err: unknown) {
     if ((err as { code?: number }).code === 4902) {
@@ -180,16 +189,16 @@ async function switchToBaseSepolia() {
         method: "wallet_addEthereumChain",
         params: [
           {
-            chainId: BASE_SEPOLIA_CHAIN_ID,
-            chainName: "Base Sepolia",
+            chainId: MARKETPLACE_CHAIN_HEX,
+            chainName: MARKETPLACE_CHAIN_NAME,
             nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
-            rpcUrls: ["https://sepolia.base.org"],
-            blockExplorerUrls: ["https://sepolia.basescan.org"],
+            rpcUrls: [MARKETPLACE_CHAIN_RPC],
+            blockExplorerUrls: [MARKETPLACE_CHAIN_EXPLORER],
           },
         ],
       });
     } else {
-      throw new Error("Please switch to Base Sepolia to complete the purchase");
+      throw new Error(`Please switch to ${MARKETPLACE_CHAIN_NAME} to complete the purchase`);
     }
   }
 }
@@ -237,20 +246,20 @@ export async function transferUSDC(
 ): Promise<`0x${string}`> {
   if (!window.ethereum) throw new Error("MetaMask not installed");
 
-  await switchToBaseSepolia();
+  await switchToMarketplaceChain();
 
   const wc = createWalletClient({
     account: fromAddress,
-    chain: baseSepolia,
+    chain: MARKETPLACE_CHAIN,
     transport: custom(window.ethereum),
   });
   const pc = createPublicClient({
-    chain: baseSepolia,
+    chain: MARKETPLACE_CHAIN,
     transport: custom(window.ethereum),
   });
 
   const hash = await wc.writeContract({
-    address: USDC_BASE_SEPOLIA,
+    address: USDC_ADDRESS,
     abi: erc20Abi,
     functionName: "transfer",
     args: [to, amountMicroUsdc],
