@@ -254,6 +254,12 @@ export default function Home() {
       try {
         const result = await getAppInfo(t, creds.message, creds.signature, [appId]);
         const app = result.apps?.[0];
+        if (app?.app_status && /^terminated$/i.test(app.app_status)) {
+          await updateAgentStatus(t, { status: "terminated" });
+          setAgentInfo(null);
+          setView("setup");
+          return null;
+        }
         if (app?.ip) {
           await updateAgentStatus(t, { instanceIp: app.ip });
           const evmAddr = app.addresses?.data?.evmAddresses?.[0]?.address;
@@ -268,6 +274,8 @@ export default function Home() {
     [eigenSiwe, walletClients]
   );
 
+  const statusCheckRef = useRef(false);
+
   useEffect(() => {
     if (view !== "dashboard" || !token) return;
 
@@ -277,6 +285,11 @@ export default function Home() {
     if (hasIp) {
       fetchDashboardData(token);
       getAgentSkills(token).then(setSkills);
+    }
+
+    if (!statusCheckRef.current && agentInfo?.appId && agentInfo.status === "running") {
+      statusCheckRef.current = true;
+      resolveIpViaProxy(token, agentInfo.appId).catch(() => {});
     }
 
     pollRef.current = setInterval(async () => {
@@ -622,15 +635,26 @@ export default function Home() {
         setWalletClients(clients);
       }
       if (!agentInfo?.appId) throw new Error("No app ID");
-      await sendLifecycleTx(clients, action, agentInfo.appId as `0x${string}`);
-      const newStatus = action === "terminate" ? "terminated" : action === "stop" ? "stopped" : "running";
-      await updateAgentStatus(token, { status: newStatus });
+
       if (action === "terminate") {
+        try {
+          await sendLifecycleTx(clients, action, agentInfo.appId as `0x${string}`);
+        } catch (txErr) {
+          const msg = txErr instanceof Error ? txErr.message : String(txErr);
+          const isAlreadyTerminated =
+            /revert/i.test(msg) || /already terminated/i.test(msg) || /invalid app/i.test(msg);
+          if (!isAlreadyTerminated) throw txErr;
+        }
+        await updateAgentStatus(token, { status: "terminated" });
         setAgentInfo(null);
         setSetupStep(1);
         setView("setup");
+        statusCheckRef.current = false;
         runPreflightChecks(address, walletClients?.walletClient, token);
       } else {
+        await sendLifecycleTx(clients, action, agentInfo.appId as `0x${string}`);
+        const newStatus = action === "stop" ? "stopped" : "running";
+        await updateAgentStatus(token, { status: newStatus });
         setAgentInfo((prev) => (prev ? { ...prev, status: newStatus } : null));
 
         if (action === "start" && agentInfo?.appId) {

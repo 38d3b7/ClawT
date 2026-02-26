@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { getAuthAddress } from "@/lib/auth-server";
 import { COMPUTE_API_URL } from "@/lib/network-config";
+import { getAgentByUser, updateAgent } from "@/lib/db/queries";
 
 const COMPUTE_API = COMPUTE_API_URL;
 const FETCH_TIMEOUT_MS = 8_000;
+
+const TERMINATED_STATUSES = new Set(["terminated", "Terminated", "TERMINATED"]);
 
 async function loginToComputeApi(message: string, signature: string) {
   const res = await fetch(`${COMPUTE_API}/auth/siwe/login`, {
@@ -52,6 +55,9 @@ export async function POST(request: Request) {
     }
 
     const data = await res.json();
+
+    syncTerminatedStatus(address, data).catch(() => {});
+
     return NextResponse.json(data);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -60,5 +66,22 @@ export async function POST(request: Request) {
       { error: isTimeout ? "Compute API request timed out" : `App info proxy error: ${message}` },
       { status: 504 }
     );
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function syncTerminatedStatus(userAddress: string, data: any) {
+  const apps = data?.apps;
+  if (!Array.isArray(apps) || apps.length === 0) return;
+
+  const anyTerminated = apps.some(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (app: any) => app.app_status && TERMINATED_STATUSES.has(app.app_status)
+  );
+  if (!anyTerminated) return;
+
+  const agent = await getAgentByUser(userAddress);
+  if (agent) {
+    await updateAgent(agent.id, { status: "terminated" });
   }
 }
