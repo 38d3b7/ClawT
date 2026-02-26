@@ -548,7 +548,11 @@ export default function Home() {
         clients = await ec.createClients();
         setWalletClients(clients);
       }
+      const { generateMnemonic } = await import("@scure/bip39");
+      const { wordlist } = await import("@scure/bip39/wordlists/english");
+      const mnemonic = generateMnemonic(wordlist);
       const envVars: Record<string, string> = {
+        MNEMONIC: mnemonic,
         BACKEND_URL: window.location.origin,
         AGENT_SOUL: selectedSoul.content,
       };
