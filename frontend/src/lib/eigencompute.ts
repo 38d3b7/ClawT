@@ -229,6 +229,20 @@ export async function getAppInfoDirect(clients: EigenClients, appId: `0x${string
   return info;
 }
 
+export async function createSessionApiClient(
+  clients: EigenClients,
+  siweMessage: string,
+  siweSignature: string
+) {
+  const sdk = await import("@layr-labs/ecloud-sdk/browser");
+  const envConfig = sdk.getEnvironmentConfig(EIGEN_ENVIRONMENT);
+  const apiClient = new sdk.UserApiClient(envConfig, clients.walletClient, clients.publicClient, {
+    useSession: true,
+  });
+  await apiClient.siweLogin({ message: siweMessage, signature: siweSignature });
+  return apiClient;
+}
+
 export async function sendLifecycleTx(
   clients: EigenClients,
   action: "start" | "stop" | "terminate",

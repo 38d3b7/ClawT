@@ -40,6 +40,8 @@ export async function POST(request: Request) {
     }
 
     const cookieHeader = await loginToComputeApi(siweMessage, siweSignature);
+    console.log("[app-info proxy] SIWE login OK, cookie length:", cookieHeader.length);
+
     const params = new URLSearchParams({ apps: appIds.join(",") });
     const res = await fetch(`${COMPUTE_API}/info?${params}`, {
       headers: { Cookie: cookieHeader },
@@ -48,6 +50,7 @@ export async function POST(request: Request) {
 
     if (!res.ok) {
       const body = await res.text().catch(() => "");
+      console.warn("[app-info proxy] /info failed:", res.status, body);
       return NextResponse.json(
         { error: `Compute API returned ${res.status}: ${body}` },
         { status: res.status }
@@ -55,6 +58,13 @@ export async function POST(request: Request) {
     }
 
     const data = await res.json();
+    console.log(
+      "[app-info proxy] /info OK, apps:",
+      data.apps?.map((a: { app_status?: string; ip?: string }) => ({
+        status: a.app_status,
+        ip: a.ip,
+      }))
+    );
 
     syncTerminatedStatus(address, data).catch(() => {});
 

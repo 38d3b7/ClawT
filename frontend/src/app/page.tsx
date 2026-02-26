@@ -247,7 +247,8 @@ export default function Home() {
           }
           creds = await signSiweForEigen(clients.address, clients.walletClient);
           setEigenSiwe(creds);
-        } catch {
+        } catch (err) {
+          console.warn("[resolveIpViaProxy] SIWE sign failed:", err instanceof Error ? err.message : err);
           return null;
         }
       }
@@ -268,7 +269,9 @@ export default function Home() {
           }
           return app.ip;
         }
-      } catch { /* resolution failed, will retry */ }
+      } catch (err) {
+        console.warn("[resolveIpViaProxy] appId=" + appId + ":", err instanceof Error ? err.message : err);
+      }
       return null;
     },
     [eigenSiwe, walletClients]
@@ -560,7 +563,9 @@ export default function Home() {
       setDeployPhase("tx-pending");
       setDeployPollAttempt(0);
 
-      const { deployAgent, signSiweForEigen } = await import("@/lib/eigencompute");
+      const { deployAgent, signSiweForEigen, createSessionApiClient } = await import(
+        "@/lib/eigencompute"
+      );
       let clients = walletClients;
       if (!clients) {
         const ec = await import("@/lib/eigencompute");
@@ -588,24 +593,61 @@ export default function Home() {
       const creds = await signSiweForEigen(clients.address, clients.walletClient);
       setEigenSiwe(creds);
 
+      let sessionClient: Awaited<ReturnType<typeof createSessionApiClient>> | null = null;
+      try {
+        sessionClient = await createSessionApiClient(clients, creds.message, creds.signature);
+        console.log("[deploy] SDK session auth established");
+      } catch (err) {
+        console.warn(
+          "[deploy] SDK session auth failed, falling back to proxy:",
+          err instanceof Error ? err.message : err
+        );
+      }
+
       let resolved = false;
       for (let attempt = 0; attempt < 36; attempt++) {
         setDeployPollAttempt(attempt + 1);
         await new Promise((r) => setTimeout(r, 5000));
         try {
-          const result = await getAppInfo(token, creds.message, creds.signature, [deployResult.appId]);
-          const app = result.apps?.[0];
-          if (app?.ip) {
-            await updateAgentStatus(token, { instanceIp: app.ip });
-            const evmAddr = app.addresses?.data?.evmAddresses?.[0]?.address;
+          let ip: string | undefined;
+          let evmAddr: string | undefined;
+
+          if (sessionClient) {
+            const [info] = await sessionClient.getInfos([deployResult.appId]);
+            console.log(
+              `[deploy poll] attempt ${attempt + 1}/36, appId=${deployResult.appId}, status=${info?.status}, ip=${info?.ip}`
+            );
+            ip = info?.ip;
+            evmAddr = info?.evmAddresses?.[0]?.address;
+          } else {
+            const result = await getAppInfo(
+              token, creds.message, creds.signature, [deployResult.appId]
+            );
+            const app = result.apps?.[0];
+            console.log(
+              `[deploy poll] attempt ${attempt + 1}/36, appId=${deployResult.appId}, status=${app?.app_status}, ip=${app?.ip}`
+            );
+            ip = app?.ip;
+            evmAddr = app?.addresses?.data?.evmAddresses?.[0]?.address;
+          }
+
+          if (ip) {
+            await updateAgentStatus(token, { instanceIp: ip });
             if (evmAddr) {
               await updateAgentStatus(token, { walletAddressEth: evmAddr });
             }
             resolved = true;
             break;
           }
-        } catch {
-          /* container still booting */
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (/\b40[13]\b/.test(msg)) {
+            console.error("[deploy poll] Auth error, stopping:", msg);
+            break;
+          }
+          console.warn(
+            `[deploy poll] attempt ${attempt + 1}/36, appId=${deployResult.appId}:`, msg
+          );
         }
       }
 
