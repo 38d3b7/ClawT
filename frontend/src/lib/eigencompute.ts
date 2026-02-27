@@ -9,6 +9,26 @@ import {
 } from "viem";
 import { EIGEN_CHAIN, EIGEN_ENVIRONMENT, KMS_BUILD } from "./network-config";
 
+// keccak256("AppCreated(address,address,uint32)")
+const APP_CREATED_TOPIC =
+  "0xe9e6e5409b80e2dab7d38194fb370b2e8045a1af28177b94ddcf19d2495d7589";
+
+function extractRealAppId(
+  logs: ReadonlyArray<{ address: string; topics: readonly string[] }>,
+  controllerAddress: string
+): `0x${string}` | null {
+  for (const log of logs) {
+    if (
+      log.address.toLowerCase() === controllerAddress.toLowerCase() &&
+      log.topics[0] === APP_CREATED_TOPIC &&
+      log.topics[2]
+    ) {
+      return getAddress(`0x${log.topics[2].slice(26)}`) as `0x${string}`;
+    }
+  }
+  return null;
+}
+
 export type EigenClients = {
   walletClient: WalletClient;
   publicClient: PublicClient;
@@ -134,6 +154,8 @@ export async function deployAgent(
 
   const canBatch = await sdk.supportsEIP5792(clients.walletClient);
 
+  let calculatedAppId: `0x${string}`;
+
   if (canBatch) {
     const batchResult = await sdk.executeDeployBatched({
       walletClient: clients.walletClient,
@@ -146,21 +168,44 @@ export async function deployAgent(
       },
       publicLogs: false,
     });
-    return { appId: batchResult.appId as `0x${string}` };
+    calculatedAppId = batchResult.appId as `0x${string}`;
+
+    for (const { transactionHash } of batchResult.receipts ?? []) {
+      const receipt = await clients.publicClient.getTransactionReceipt({
+        hash: transactionHash,
+      });
+      const real = extractRealAppId(
+        receipt.logs as unknown as Array<{ address: string; topics: string[] }>,
+        envConfig.appControllerAddress
+      );
+      if (real) return { appId: real };
+    }
+  } else {
+    const seqResult = await sdk.executeDeploySequential({
+      walletClient: clients.walletClient,
+      publicClient: clients.publicClient,
+      environmentConfig: envConfig,
+      data: {
+        appId: prepared.appId,
+        salt: prepared.salt,
+        executions: prepared.executions,
+      },
+      publicLogs: false,
+    });
+    calculatedAppId = seqResult.appId as `0x${string}`;
+
+    const receipt = await clients.publicClient.getTransactionReceipt({
+      hash: seqResult.txHashes.createApp,
+    });
+    const real = extractRealAppId(
+      receipt.logs as unknown as Array<{ address: string; topics: string[] }>,
+      envConfig.appControllerAddress
+    );
+    if (real) return { appId: real };
   }
 
-  const seqResult = await sdk.executeDeploySequential({
-    walletClient: clients.walletClient,
-    publicClient: clients.publicClient,
-    environmentConfig: envConfig,
-    data: {
-      appId: prepared.appId,
-      salt: prepared.salt,
-      executions: prepared.executions,
-    },
-    publicLogs: false,
-  });
-  return { appId: seqResult.appId as `0x${string}` };
+  console.warn("Could not extract real appId from tx receipt, using calculated:", calculatedAppId);
+  return { appId: calculatedAppId };
 }
 
 export async function upgradeAgentEnv(

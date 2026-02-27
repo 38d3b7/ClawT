@@ -207,6 +207,7 @@ export default function Home() {
     apps: { appId: string; status: number }[];
   } | null>(null);
   const [eigenAccountLoading, setEigenAccountLoading] = useState(false);
+  const [terminatingAppId, setTerminatingAppId] = useState<string | null>(null);
 
   const [dashTab, setDashTab] = useState<DashboardTab>("overview");
   const [health, setHealth] = useState<HealthData | null>(null);
@@ -743,6 +744,35 @@ export default function Home() {
       setError(`EigenCompute query failed: ${err instanceof Error ? err.message : err}`);
     } finally {
       setEigenAccountLoading(false);
+    }
+  }
+
+  async function handleTerminateOnChain(appId: string) {
+    setTerminatingAppId(appId);
+    setError("");
+    try {
+      const { sendLifecycleTx, createClients } = await import("@/lib/eigencompute");
+      let clients = walletClients;
+      if (!clients) {
+        clients = await createClients();
+        setWalletClients(clients);
+      }
+      await sendLifecycleTx(clients, "terminate", appId as `0x${string}`);
+      setEigenAccount((prev) =>
+        prev
+          ? {
+              ...prev,
+              activeCount: Math.max(0, prev.activeCount - 1),
+              apps: prev.apps.map((a) =>
+                a.appId === appId ? { ...a, status: 3 } : a
+              ),
+            }
+          : prev
+      );
+    } catch (err) {
+      setError(`Terminate failed: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setTerminatingAppId(null);
     }
   }
 
@@ -1579,9 +1609,27 @@ export default function Home() {
                   </div>
                   {eigenAccount ? (
                     <div className="space-y-3">
-                      <div className="flex items-center gap-4 text-sm">
-                        <span className="text-muted-foreground">Active apps:</span>
-                        <span className="font-medium">{eigenAccount.activeCount} / {eigenAccount.maxApps}</span>
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-4">
+                          <span className="text-muted-foreground">Active apps:</span>
+                          <span className="font-medium">{eigenAccount.activeCount} / {eigenAccount.maxApps}</span>
+                        </div>
+                        {eigenAccount.apps.filter((a) => (a.status === 1 || a.status === 2) && a.appId !== agentInfo?.appId).length > 1 && (
+                          <button
+                            onClick={async () => {
+                              const zombies = eigenAccount.apps.filter(
+                                (a) => (a.status === 1 || a.status === 2) && a.appId !== agentInfo?.appId
+                              );
+                              for (const z of zombies) {
+                                await handleTerminateOnChain(z.appId);
+                              }
+                            }}
+                            disabled={!!terminatingAppId}
+                            className="rounded bg-red-600 px-2.5 py-1 text-[10px] font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                          >
+                            {terminatingAppId ? "Terminating\u2026" : `Terminate ${eigenAccount.apps.filter((a) => (a.status === 1 || a.status === 2) && a.appId !== agentInfo?.appId).length} zombies`}
+                          </button>
+                        )}
                       </div>
                       {eigenAccount.apps.length > 0 && (
                         <table className="w-full text-xs">
@@ -1589,25 +1637,48 @@ export default function Home() {
                             <tr className="border-b text-left text-muted-foreground">
                               <th className="pb-1 font-medium">App ID</th>
                               <th className="pb-1 font-medium">Status</th>
+                              <th className="pb-1 font-medium">Action</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {eigenAccount.apps.map((a) => (
-                              <tr key={a.appId} className="border-b border-border/50">
-                                <td className="py-1.5 font-mono">{a.appId.slice(0, 10)}&hellip;{a.appId.slice(-6)}</td>
-                                <td className="py-1.5">
-                                  <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                                    a.status === 1
-                                      ? "bg-green-100 text-green-700"
-                                      : a.status === 3
-                                        ? "bg-red-100 text-red-700"
-                                        : "bg-yellow-100 text-yellow-700"
-                                  }`}>
-                                    {STATUS_LABELS[a.status] ?? `unknown(${a.status})`}
-                                  </span>
-                                </td>
-                              </tr>
-                            ))}
+                            {eigenAccount.apps.map((a) => {
+                              const isCurrentAgent = agentInfo?.appId === a.appId;
+                              const canTerminate = (a.status === 1 || a.status === 2) && !isCurrentAgent;
+                              return (
+                                <tr key={a.appId} className="border-b border-border/50">
+                                  <td className="py-1.5 font-mono">
+                                    {a.appId.slice(0, 10)}&hellip;{a.appId.slice(-6)}
+                                    {isCurrentAgent && (
+                                      <span className="ml-1.5 rounded bg-blue-100 px-1.5 py-0.5 text-[9px] font-medium text-blue-700">current</span>
+                                    )}
+                                  </td>
+                                  <td className="py-1.5">
+                                    <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                      a.status === 1
+                                        ? "bg-green-100 text-green-700"
+                                        : a.status === 3
+                                          ? "bg-red-100 text-red-700"
+                                          : "bg-yellow-100 text-yellow-700"
+                                    }`}>
+                                      {STATUS_LABELS[a.status] ?? `unknown(${a.status})`}
+                                    </span>
+                                  </td>
+                                  <td className="py-1.5">
+                                    {canTerminate ? (
+                                      <button
+                                        onClick={() => handleTerminateOnChain(a.appId)}
+                                        disabled={terminatingAppId === a.appId}
+                                        className="rounded bg-red-600 px-2 py-0.5 text-[10px] font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                                      >
+                                        {terminatingAppId === a.appId ? "Terminating\u2026" : "Terminate"}
+                                      </button>
+                                    ) : a.status === 3 ? (
+                                      <span className="text-[10px] text-muted-foreground">terminated</span>
+                                    ) : null}
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       )}
