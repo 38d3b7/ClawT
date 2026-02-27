@@ -1,22 +1,29 @@
 # Agent Deploy Debugging
 
-## CRITICAL BLOCKER (Feb 2026)
+## NEXT STEPS (for incoming agent -- Feb 27 2026)
 
-**Agent heartbeats are blocked by Vercel Deployment Protection (Standard Protection / Vercel Authentication).** The agent container POSTs to `/api/agents/heartbeat-register` but Vercel returns an auth challenge HTML page instead of routing to the API. This is why 20 out of 21 deploys never connected.
+The agent-to-Vercel heartbeat has NEVER worked in production (21 deploys failed). All the code is in place. The problem is that the frontend deployment was built BEFORE the Vercel bypass secret was added, so `VERCEL_AUTOMATION_BYPASS_SECRET` is empty at runtime.
 
-### The fix is in place but not activated:
+**What you need to do (in order):**
 
-1. **Agent code** (`agent/src/index.ts` `registerWithBackend()`) already sends `x-vercel-protection-bypass` header if `VERCEL_BYPASS_SECRET` env var is set.
-2. **Deploy flow** (`frontend/src/app/page.tsx` `handleDeploy`) already fetches the bypass secret from `/api/eigen/bypass-secret` and injects it as `VERCEL_BYPASS_SECRET` into agent env vars.
+1. Confirm the latest git-push auto-deploy on `frsr/frontend` succeeded and is the PRODUCTION deployment. Check `vercel ls` or the Vercel dashboard. If the latest deploy is not live, run `cd frontend && vercel --prod`.
+2. Run the MANDATORY Pre-Deploy Checklist below (all 5 steps). Do NOT skip any.
+3. Only after all 5 checks pass, tell the user to terminate agent #21 and redeploy.
+
+## Why 21 deploys failed
+
+**Vercel Deployment Protection (Vercel Authentication)** blocks ALL unauthenticated HTTP requests, including the agent's heartbeat POST. The agent container has no Vercel session, so every heartbeat gets an HTML login page instead of reaching the API route.
+
+### The fix (all code is merged and in the Docker image):
+
+1. **Agent code** (`agent/src/index.ts` `registerWithBackend()`) sends `x-vercel-protection-bypass` header if `VERCEL_BYPASS_SECRET` env var is set.
+2. **Deploy flow** (`frontend/src/app/page.tsx` `handleDeploy`) fetches the bypass secret from `/api/eigen/bypass-secret` and injects it as `VERCEL_BYPASS_SECRET` into agent env vars.
 3. **API route** (`frontend/src/app/api/eigen/bypass-secret/route.ts`) returns `process.env.VERCEL_AUTOMATION_BYPASS_SECRET`.
 4. **Docker image** (`frsrventure/clawt-agent:latest`) is rebuilt with bypass header support.
 
-### Current state (Feb 27 2026):
+### What was missing:
 
-- Protection Bypass for Automation is ENABLED on `frsr/frontend` (secret named "clawt").
-- `VERCEL_AUTOMATION_BYPASS_SECRET` is baked into deployments at BUILD TIME. If the frontend was deployed before the bypass was added, it won't have the env var. **The frontend must be redeployed** after the bypass secret is configured.
-- After the frontend is redeployed with the env var, the AGENT must also be redeployed (terminate + deploy from UI) so the deploy flow can fetch the bypass secret and inject it into agent env vars.
-- The sequence is: (1) redeploy frontend, (2) terminate old agent, (3) deploy new agent from the updated frontend.
+Protection Bypass for Automation IS enabled on `frsr/frontend` (secret named "clawt"). But `VERCEL_AUTOMATION_BYPASS_SECRET` is baked in at BUILD TIME. The frontend must have been deployed AFTER the bypass was added. Git pushes to main trigger auto-deploys, so recent pushes should have picked it up -- but this MUST be verified (step 2 of checklist) before asking the user to deploy an agent. The sequence is always: (1) ensure frontend has the env var, (2) terminate old agent, (3) deploy new agent from the updated frontend.
 
 ## MANDATORY Pre-Deploy Checklist
 
