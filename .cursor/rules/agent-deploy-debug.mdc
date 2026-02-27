@@ -1,17 +1,58 @@
 # Agent Deploy Debugging
 
+## CRITICAL BLOCKER (Feb 2026)
+
+**Agent heartbeats are blocked by Vercel Deployment Protection (Standard Protection / Vercel Authentication).** The agent container POSTs to `/api/agents/heartbeat-register` but Vercel returns an auth challenge HTML page instead of routing to the API. This is why 20 out of 21 deploys never connected.
+
+### The fix is in place but not activated:
+
+1. **Agent code** (`agent/src/index.ts` `registerWithBackend()`) already sends `x-vercel-protection-bypass` header if `VERCEL_BYPASS_SECRET` env var is set.
+2. **Deploy flow** (`frontend/src/app/page.tsx` `handleDeploy`) already fetches the bypass secret from `/api/eigen/bypass-secret` and injects it as `VERCEL_BYPASS_SECRET` into agent env vars.
+3. **API route** (`frontend/src/app/api/eigen/bypass-secret/route.ts`) returns `process.env.VERCEL_AUTOMATION_BYPASS_SECRET`.
+4. **Docker image** (`frsrventure/clawt-agent:latest`) is rebuilt with bypass header support.
+
+### What's missing:
+
+**Protection Bypass for Automation must be enabled on the ACTIVE Vercel project (`frsr/frontend`).** The bypass was previously configured on the old `service-5736s-projects/frontend` project, which is no longer receiving deployments. Without this, `VERCEL_AUTOMATION_BYPASS_SECRET` is empty in the deployment, so the agent sends no bypass header, and Vercel blocks the heartbeat.
+
+**To fix:** Go to Vercel → `frsr/frontend` → Settings → Deployment Protection → Protection Bypass for Automation → Enable. Then redeploy both frontend (`vercel --prod` or git push) AND the agent (terminate + redeploy from UI).
+
+**Alternative:** Disable Vercel Authentication entirely. But the bypass approach is better long-term.
+
+## Vercel Project Situation
+
+There are TWO Vercel projects for the frontend:
+
+| Project | Team | Domain | Status |
+|---------|------|--------|--------|
+| `service-5736s-projects/frontend` | service-5736 | `frontend-eight-dusky-51.vercel.app` | OLD, stale deployment |
+| `frsr/frontend` | FRSR | `clawt-io.vercel.app` | ACTIVE, receives deploys |
+
+- The `frsr/frontend` project was created when Git was connected to Vercel.
+- CLI deploys (`vercel --prod`) go to `frsr/frontend`.
+- Git pushes to `main` auto-deploy to `frsr/frontend` (Git connected to `38d3b7/ClawT`).
+- Git author email was fixed: `service@act.foundation` (was `"service@act.foundation"` with literal quotes).
+- The old `service-5736s-projects` project can be deleted once `frsr/frontend` is fully configured.
+
+### Deploy frontend
+
+```bash
+cd frontend && vercel --prod
+# OR just git push (auto-deploys via Git integration)
+```
+
 ## Architecture
 
 ```
-Agent (EigenCompute TEE)          Frontend (Vercel)
-─────────────────────────         ──────────────────
+Agent (EigenCompute TEE)          Frontend (Vercel: clawt-io.vercel.app)
+─────────────────────────         ──────────────────────────────────────
 Container boots                   
   → derives wallet from MNEMONIC  
   → discoverPublicIp (ipify)     
   → signs heartbeat message       
   → POST /api/agents/heartbeat-register ──→ verify sig
-                                           fuzzy-match agent by status=running + no wallet
-                                           persist walletAddressEth + instanceIp
+      with x-vercel-protection-bypass       appId-match or fuzzy-match agent
+      header (if VERCEL_BYPASS_SECRET set)  persist walletAddressEth + instanceIp
                                   
                                   Frontend polls GET /api/agents/info every 5s
                                     → if instanceIp appears → "Online"
@@ -20,16 +61,19 @@ Container boots
 
 ## Known Fixes (already applied)
 
-- **Dockerfile**: `COPY shared/ /shared/` + `ENV NODE_PATH=/app/node_modules` -- fixes `ERR_MODULE_NOT_FOUND: Cannot find module '/shared/manifest.js'`
-- **Build context**: Dockerfile uses repo root as build context (COPY paths prefixed with `agent/`). Build with `docker build -f agent/Dockerfile .` from repo root.
-- **Port**: All proxy routes use port 3000 (was 3001). Agent listens on 3000.
-- **Heartbeat logging**: `[heartbeat]` prefix in `/api/agents/heartbeat-register/route.ts`, visible in Vercel Function Logs.
+- **Dockerfile**: `COPY shared/ /shared/` + `ENV NODE_PATH=/app/node_modules`
+- **Build context**: Dockerfile uses repo root as build context. Build with `docker build -f agent/Dockerfile .` from repo root.
+- **Port**: All proxy routes use port 3000. Agent listens on 3000.
+- **Heartbeat logging**: `[heartbeat]` prefix in heartbeat-register route.
+- **Ghost agents**: `terminateAllAgentsForUser()` now sets `appId: null` along with `status: "terminated"`, preventing ghost accumulation. The `agent-state` GET route also auto-cleans any remaining ghosts.
+- **Vercel bypass**: Agent sends `x-vercel-protection-bypass` header. Deploy flow auto-fetches bypass secret from `/api/eigen/bypass-secret`.
+- **Git email**: Fixed from `"service@act.foundation"` (quoted) to `service@act.foundation`.
 
 ## Dead Ends (do NOT pursue)
 
-- **ecloud CLI** (`ecloud compute app logs`): Requires the deploying wallet's private key, which is the user's MetaMask wallet. Cannot be used from a server or CI.
-- **EigenCompute REST API**: Returns 504 when called from Vercel serverless functions. CORS-blocked from the browser.
-- **In-memory ring buffers on Vercel**: Vercel functions are stateless -- each invocation is a cold/warm start with no shared memory. Use DB or Vercel Function Logs instead.
+- **ecloud CLI** (`ecloud compute app logs`): Requires the deploying wallet's private key (user's MetaMask). Cannot be used from server/CI.
+- **EigenCompute REST API**: Returns 504 from Vercel serverless, CORS-blocked from browser.
+- **In-memory ring buffers on Vercel**: Stateless functions, no shared memory.
 - **Container log retrieval**: No accessible path to get TEE container stdout/stderr.
 
 ## How to Diagnose a Deploy
@@ -42,26 +86,25 @@ fetch("/api/debug/agent-state", {
 }).then(r => r.json()).then(console.log)
 ```
 
-- `walletAddressEth: null` + `instanceIp: null` → agent never phoned home (container didn't boot or can't reach Vercel)
+- `walletAddressEth: null` + `instanceIp: null` → agent never phoned home (container didn't boot, can't reach Vercel, or Vercel auth blocked it)
 - `walletAddressEth: "0x..."` + `instanceIp: null` → heartbeat arrived but ipify failed in TEE
 - `walletAddressEth: "0x..."` + `instanceIp: "1.2.3.4"` → agent is online, check frontend display logic
 
 ### 2. Check Vercel Function Logs
 
-Go to `vercel.com > project > Logs`, filter for `heartbeat`. Look for `[heartbeat]` entries showing:
+Go to `vercel.com > frsr/frontend > Logs`, filter for `heartbeat`. Look for `[heartbeat]` entries:
 - `received` → heartbeat arrived
 - `signature valid` / `invalid signature` → auth check
-- `fuzzy matched agent id=X` → first-time wallet binding
-- `no fuzzy match` → no running agent with empty wallet (wrong DB state?)
-- `updated IP` → subsequent heartbeat with new IP
-- No entries at all → container never sent a heartbeat
+- `appId match` / `fuzzy matched` → agent binding
+- No entries at all → container never reached Vercel (auth blocked or container crashed)
 
 ### 3. Test Docker image locally
 
 ```bash
 docker run --rm --platform linux/amd64 \
   -e MNEMONIC="abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about" \
-  -e BACKEND_URL="https://frontend-eight-dusky-51.vercel.app" \
+  -e BACKEND_URL="https://clawt-io.vercel.app" \
+  -e VERCEL_BYPASS_SECRET="<the-bypass-secret>" \
   frsrventure/clawt-agent:latest
 ```
 
@@ -74,17 +117,18 @@ docker build -f agent/Dockerfile -t frsrventure/clawt-agent:latest --platform li
 docker push frsrventure/clawt-agent:latest
 ```
 
-Then terminate the old agent in the UI and redeploy. The deploy flow resolves the Docker Hub digest at deploy time.
-
 ## Key Files
 
 | File | Role |
 |------|------|
-| `agent/Dockerfile` | Container image -- must include `COPY shared/ /shared/` |
-| `agent/src/index.ts` | Agent entry point, `registerWithBackend()`, heartbeat scheduler |
-| `agent/src/executor.ts` | Imports `../../shared/manifest.js` (resolves to `/shared/manifest.js`) |
-| `frontend/src/app/api/agents/heartbeat-register/route.ts` | Receives heartbeats, fuzzy-matches agent, persists wallet+IP |
+| `agent/Dockerfile` | Container image |
+| `agent/src/index.ts` | Agent entry point, `registerWithBackend()` with bypass header, heartbeat scheduler |
+| `frontend/src/app/api/agents/heartbeat-register/route.ts` | Receives heartbeats, matches agent, persists wallet+IP |
 | `frontend/src/app/api/agents/info/route.ts` | Returns agent state + live health probe |
-| `frontend/src/app/api/debug/agent-state/route.ts` | Raw DB fields for debugging |
+| `frontend/src/app/api/debug/agent-state/route.ts` | Raw DB fields, auto-cleans ghosts |
+| `frontend/src/app/api/eigen/bypass-secret/route.ts` | Returns `VERCEL_AUTOMATION_BYPASS_SECRET` to authenticated callers |
 | `frontend/src/lib/eigencompute.ts` | `deployAgent()` -- resolves image digest, encrypts env vars, deploys |
+| `frontend/src/lib/db/queries.ts` | `terminateAllAgentsForUser()` -- clears appId + status on old agents |
 | `frontend/src/lib/db/schema.ts` | Agents table schema |
+| `frontend/src/lib/api.ts` | `BillingDetail` type, `dismissGhosts()`, `getBillingStatus()` |
+| `frontend/src/app/page.tsx` | Deploy flow fetches bypass secret, injects into agent env vars |
