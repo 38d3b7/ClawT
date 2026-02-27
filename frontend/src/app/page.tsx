@@ -242,7 +242,6 @@ export default function Home() {
   const initRef = useRef(false);
 
   const [deployPhase, setDeployPhase] = useState<"idle" | "tx-pending" | "waiting-for-ip" | "ready" | "failed">("idle");
-  const [deployPollAttempt, setDeployPollAttempt] = useState(0);
   const [agentHealthy, setAgentHealthy] = useState<boolean | null>(null);
   const [staleAgents, setStaleAgents] = useState<StaleAgent[]>([]);
   const [ghostAgents, setGhostAgents] = useState<StaleAgent[]>([]);
@@ -593,8 +592,6 @@ export default function Home() {
       setError("");
       setLoading(true);
       setDeployPhase("tx-pending");
-      setDeployPollAttempt(0);
-
       const { deployAgent } = await import("@/lib/eigencompute");
       let clients = walletClients;
       if (!clients) {
@@ -629,35 +626,7 @@ export default function Home() {
         appId: deployResult.appId,
       });
 
-      setDeployPhase("waiting-for-ip");
-
-      let resolved = false;
-      for (let attempt = 0; attempt < 36; attempt++) {
-        setDeployPollAttempt(attempt + 1);
-        await new Promise((r) => setTimeout(r, 5000));
-        try {
-          const info = await getAgentInfo(token);
-          console.log(
-            `[deploy poll] attempt ${attempt + 1}/36, appId=${deployResult.appId}, ip=${info?.instanceIp}`
-          );
-          if (info?.instanceIp) {
-            resolved = true;
-            break;
-          }
-        } catch (err) {
-          console.warn(
-            `[deploy poll] attempt ${attempt + 1}/36, appId=${deployResult.appId}:`,
-            err instanceof Error ? err.message : err
-          );
-        }
-      }
-
-      if (resolved) {
-        setDeployPhase("ready");
-      } else {
-        setDeployPhase("failed");
-      }
-
+      setDeployPhase("idle");
       await checkAgent(token);
     } catch (err) {
       setDeployPhase("failed");
@@ -1228,31 +1197,8 @@ export default function Home() {
               className="mb-4 w-full rounded-lg border border-border bg-background px-4 py-3 text-sm outline-none transition-colors focus:border-primary disabled:opacity-50"
             />
 
-            {deployPhase === "waiting-for-ip" && (
-              <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
-                <div className="flex items-center gap-2">
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
-                  <span>Waiting for agent to come online... ({deployPollAttempt}/36)</span>
-                </div>
-                <p className="mt-1 text-xs text-blue-600">TEE provisioning can take a few minutes.</p>
-              </div>
-            )}
-
-            {deployPhase === "failed" && !error && (
-              <div className="mb-4 rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-700">
-                <p>Agent deployed but not yet reachable. The dashboard will keep trying to connect.</p>
-                <button
-                  onClick={() => { setDeployPhase("idle"); checkAgent(token); }}
-                  className="mt-2 rounded bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
-                >
-                  Continue to Dashboard
-                </button>
-              </div>
-            )}
-
             <button onClick={handleDeploy} disabled={!agentName || loading} className="w-full rounded-lg bg-primary px-6 py-3 font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50">
               {deployPhase === "tx-pending" ? "Confirming on-chain (check MetaMask)..." :
-                deployPhase === "waiting-for-ip" ? "Connecting to agent..." :
                 loading ? "Deploying..." : "Deploy"}
             </button>
           </div>
@@ -1261,6 +1207,19 @@ export default function Home() {
         {/* ── Dashboard ── */}
         {view === "dashboard" && (
           <div className="space-y-6">
+            {/* Starting up banner */}
+            {agentInfo && !agentInfo.instanceIp && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+                <div className="flex items-center gap-2 text-sm text-blue-700">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+                  <span className="font-medium">Agent is starting up</span>
+                </div>
+                <p className="mt-1 text-xs text-blue-600">
+                  TEE provisioning can take a few minutes. This banner will disappear when the agent comes online.
+                </p>
+              </div>
+            )}
+
             {/* Stale agents banner */}
             {staleAgents.filter((a) => a.appId !== agentInfo?.appId).length > 0 && (
               <div className="rounded-lg border border-amber-300 bg-amber-50 p-4">
