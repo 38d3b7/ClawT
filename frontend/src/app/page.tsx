@@ -1696,7 +1696,6 @@ export default function Home() {
                           <thead>
                             <tr className="border-b text-left text-muted-foreground">
                               <th className="pb-1 font-medium">Item</th>
-                              <th className="pb-1 text-right font-medium">Qty</th>
                               <th className="pb-1 text-right font-medium">Subtotal</th>
                             </tr>
                           </thead>
@@ -1704,7 +1703,6 @@ export default function Home() {
                             {dashBilling.lineItems.map((li, idx) => (
                               <tr key={idx} className="border-b border-border/50">
                                 <td className="py-1.5">{li.description}</td>
-                                <td className="py-1.5 text-right">{li.quantity}</td>
                                 <td className="py-1.5 text-right">${(li.subtotal / 100).toFixed(2)}</td>
                               </tr>
                             ))}
