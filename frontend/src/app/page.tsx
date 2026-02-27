@@ -23,6 +23,8 @@ import {
   getAgentEvolution,
   getAgentSkills,
   getAgentEnv,
+  getAllAgents,
+  terminateAgentById,
 } from "@/lib/api";
 import type {
   AgentInfo,
@@ -30,6 +32,7 @@ import type {
   EvolutionData,
   PrincipleEntry,
   SkillInfo,
+  StaleAgent,
 } from "@/lib/api";
 import { STARTER_SOULS } from "@/lib/souls";
 import type { Soul } from "@/lib/souls";
@@ -193,6 +196,9 @@ export default function Home() {
   const [deployPhase, setDeployPhase] = useState<"idle" | "tx-pending" | "waiting-for-ip" | "ready" | "failed">("idle");
   const [deployPollAttempt, setDeployPollAttempt] = useState(0);
   const [agentHealthy, setAgentHealthy] = useState<boolean | null>(null);
+  const [staleAgents, setStaleAgents] = useState<StaleAgent[]>([]);
+  const [ghostAgents, setGhostAgents] = useState<StaleAgent[]>([]);
+  const [cleaningUpId, setCleaningUpId] = useState<number | null>(null);
 
   const [dashTab, setDashTab] = useState<DashboardTab>("overview");
   const [health, setHealth] = useState<HealthData | null>(null);
@@ -275,7 +281,7 @@ export default function Home() {
   const checkAgent = useCallback(
     async (t: string) => {
       try {
-        const info = await getAgentInfo(t);
+        const [info] = await Promise.all([getAgentInfo(t), fetchStaleAgents(t)]);
         if (info && info.status !== "terminated") {
           setAgentInfo(info);
           setView("dashboard");
@@ -286,6 +292,7 @@ export default function Home() {
         setView("landing");
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
 
@@ -312,6 +319,7 @@ export default function Home() {
         const [billing, grant] = await Promise.all([
           wc ? checkBillingViaProxy(addr as `0x${string}`, wc, t) : null,
           getGrantStatus(addr),
+          fetchStaleAgents(t),
         ]);
         if (billing) {
           setBillingActive(billing.active);
@@ -326,6 +334,7 @@ export default function Home() {
         setCheckingPreflight(false);
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
 
@@ -436,8 +445,8 @@ export default function Home() {
     setAddress(a);
 
     let cancelled = false;
-    getAgentInfo(t)
-      .then((info) => {
+    Promise.all([getAgentInfo(t), fetchStaleAgents(t)])
+      .then(([info]) => {
         if (cancelled) return;
         if (info && info.status !== "terminated") {
           setAgentInfo(info);
@@ -612,20 +621,20 @@ export default function Home() {
       setError("");
 
       if (action === "terminate") {
-        if (agentInfo?.appId && walletClients) {
-          try {
-            const { sendLifecycleTx } = await import("@/lib/eigencompute");
-            await sendLifecycleTx(walletClients, action, agentInfo.appId as `0x${string}`);
-          } catch {
-            // Best-effort: agent may already be terminated on-chain or tx
-            // rejected. DB cleanup proceeds regardless.
-          }
+        const { sendLifecycleTx, createClients } = await import("@/lib/eigencompute");
+        let clients = walletClients;
+        if (!clients) {
+          clients = await createClients();
+          setWalletClients(clients);
+        }
+        if (agentInfo?.appId) {
+          await sendLifecycleTx(clients, "terminate", agentInfo.appId as `0x${string}`);
         }
         await updateAgentStatus(token, { status: "terminated" });
         setAgentInfo(null);
         setSetupStep(1);
         setView("setup");
-        runPreflightChecks(address, walletClients?.walletClient, token);
+        runPreflightChecks(address, clients?.walletClient, token);
         return;
       }
 
@@ -654,6 +663,72 @@ export default function Home() {
       setError((err as Error).message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function fetchStaleAgents(t: string) {
+    try {
+      const { allAgents, ghosts } = await getAllAgents(t);
+      setStaleAgents(allAgents);
+      setGhostAgents(ghosts);
+    } catch {
+      setStaleAgents([]);
+      setGhostAgents([]);
+    }
+  }
+
+  async function handleCleanupAgent(agent: StaleAgent) {
+    setCleaningUpId(agent.id);
+    setError("");
+    try {
+      if (agent.appId) {
+        const { sendLifecycleTx, createClients } = await import("@/lib/eigencompute");
+        let clients = walletClients;
+        if (!clients) {
+          clients = await createClients();
+          setWalletClients(clients);
+        }
+        await sendLifecycleTx(clients, "terminate", agent.appId as `0x${string}`);
+      }
+      await terminateAgentById(token, agent.id);
+      setStaleAgents((prev) => prev.filter((a) => a.id !== agent.id));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (confirm(`On-chain terminate failed: ${msg}\n\nForce-terminate in DB only? (Container may still run on EigenCompute)`)) {
+        try {
+          await terminateAgentById(token, agent.id);
+          setStaleAgents((prev) => prev.filter((a) => a.id !== agent.id));
+        } catch (dbErr) {
+          setError((dbErr as Error).message);
+        }
+      }
+    } finally {
+      setCleaningUpId(null);
+    }
+  }
+
+  async function handleTerminateGhost(agent: StaleAgent) {
+    if (!agent.appId) return;
+    setCleaningUpId(agent.id);
+    setError("");
+    try {
+      const { sendLifecycleTx, createClients } = await import("@/lib/eigencompute");
+      let clients = walletClients;
+      if (!clients) {
+        clients = await createClients();
+        setWalletClients(clients);
+      }
+      await sendLifecycleTx(clients, "terminate", agent.appId as `0x${string}`);
+      setGhostAgents((prev) => prev.filter((a) => a.id !== agent.id));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("already terminated") || msg.includes("revert")) {
+        setGhostAgents((prev) => prev.filter((a) => a.id !== agent.id));
+      } else {
+        setError(`Ghost terminate failed: ${msg}`);
+      }
+    } finally {
+      setCleaningUpId(null);
     }
   }
 
@@ -856,6 +931,36 @@ export default function Home() {
           <div className="mx-auto max-w-lg pt-10">
             <h2 className="mb-1 text-xl font-semibold">Pre-Deploy Checks</h2>
             <p className="mb-6 text-sm text-muted-foreground">Verify EigenCloud billing and EigenAI grant before deploying.</p>
+
+            {staleAgents.length > 0 && (
+              <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-5">
+                <h3 className="mb-1 text-sm font-semibold text-amber-800">Active Agents Found</h3>
+                <p className="mb-3 text-xs text-amber-700">
+                  Terminate these before deploying a new agent. Each terminate requires a MetaMask signature to stop the container on EigenCompute.
+                </p>
+                <div className="space-y-2">
+                  {staleAgents.map((a) => (
+                    <div key={a.id} className="flex items-center justify-between rounded-md border border-amber-200 bg-white px-3 py-2">
+                      <div className="min-w-0">
+                        <span className="text-xs font-medium">#{a.id} {a.name}</span>
+                        <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">{a.status}</span>
+                        {a.appId && (
+                          <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">{a.appId}</p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleCleanupAgent(a)}
+                        disabled={cleaningUpId !== null}
+                        className="ml-3 shrink-0 rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                      >
+                        {cleaningUpId === a.id ? "Terminating..." : "Terminate"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="space-y-4">
               <div className="rounded-lg border border-border p-5">
                 <div className="mb-2 flex items-center gap-2">
@@ -1033,6 +1138,66 @@ export default function Home() {
         {/* ── Dashboard ── */}
         {view === "dashboard" && (
           <div className="space-y-6">
+            {/* Stale agents banner */}
+            {staleAgents.filter((a) => a.appId !== agentInfo?.appId).length > 0 && (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 p-4">
+                <h3 className="mb-1 text-sm font-semibold text-amber-800">Stale Agents Still Active</h3>
+                <p className="mb-3 text-xs text-amber-700">
+                  These old agents are still running on EigenCompute. Terminate them to free quota and prevent heartbeat conflicts.
+                </p>
+                <div className="space-y-2">
+                  {staleAgents
+                    .filter((a) => a.appId !== agentInfo?.appId)
+                    .map((a) => (
+                      <div key={a.id} className="flex items-center justify-between rounded-md border border-amber-200 bg-white px-3 py-2">
+                        <div className="min-w-0">
+                          <span className="text-xs font-medium">#{a.id} {a.name}</span>
+                          <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">{a.status}</span>
+                          {a.appId && (
+                            <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">{a.appId}</p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => handleCleanupAgent(a)}
+                          disabled={cleaningUpId !== null}
+                          className="ml-3 shrink-0 rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                        >
+                          {cleaningUpId === a.id ? "Terminating..." : "Terminate"}
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+            {/* Ghost containers banner */}
+            {ghostAgents.length > 0 && (
+              <div className="rounded-lg border border-red-300 bg-red-50 p-4">
+                <h3 className="mb-1 text-sm font-semibold text-red-800">Ghost Containers on EigenCompute</h3>
+                <p className="mb-3 text-xs text-red-700">
+                  These agents are terminated in the database but may still be running on EigenCompute, consuming quota. Sign a MetaMask transaction to stop each one.
+                </p>
+                <div className="space-y-2">
+                  {ghostAgents.map((a) => (
+                    <div key={a.id} className="flex items-center justify-between rounded-md border border-red-200 bg-white px-3 py-2">
+                      <div className="min-w-0">
+                        <span className="text-xs font-medium">#{a.id} {a.name}</span>
+                        <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700">ghost</span>
+                        {a.appId && (
+                          <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">{a.appId}</p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleTerminateGhost(a)}
+                        disabled={cleaningUpId !== null}
+                        className="ml-3 shrink-0 rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                      >
+                        {cleaningUpId === a.id ? "Signing..." : "On-chain Terminate"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {/* IP resolution banner */}
             {agentStatus === "running" && !agentInfo?.instanceIp && (
               <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">

@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { getAuthAddress } from "@/lib/auth-server";
-import { ensureUser, createAgent, updateAgent, getAgentByUser } from "@/lib/db/queries";
+import {
+  ensureUser,
+  createAgent,
+  updateAgent,
+  terminateAllAgentsForUser,
+} from "@/lib/db/queries";
 
 export async function POST(request: Request) {
   const address = getAuthAddress(request);
@@ -19,12 +24,9 @@ export async function POST(request: Request) {
 
     await ensureUser(address);
 
-    const existing = await getAgentByUser(address);
-    if (existing) {
-      return NextResponse.json(
-        { error: "Agent already exists for this wallet" },
-        { status: 409 }
-      );
+    const terminated = await terminateAllAgentsForUser(address);
+    if (terminated > 0) {
+      console.log(`[register] auto-terminated ${terminated} previous agent(s) for ${address.slice(0, 10)}`);
     }
 
     const ecloudName = `clawt-${address.slice(2, 10)}`;

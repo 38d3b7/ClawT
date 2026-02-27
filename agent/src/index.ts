@@ -364,13 +364,14 @@ async function registerWithBackend(): Promise<void> {
   const timestamp = Date.now().toString();
   const message = `clawt-agent-heartbeat:${walletAddress}:${timestamp}`;
   const signature = await signMessage(message);
+  const appId = process.env.AGENT_APP_ID;
 
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
       const res = await fetch(`${backendUrl}/api/agents/heartbeat-register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress, timestamp, signature, instanceIp }),
+        body: JSON.stringify({ walletAddress, timestamp, signature, instanceIp, appId }),
       });
       if (res.ok) {
         console.log(`Registered with backend${instanceIp ? ` (IP: ${instanceIp})` : ""}`);

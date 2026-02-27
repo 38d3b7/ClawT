@@ -1,0 +1,86 @@
+# Pre-Deploy Check
+
+**Before telling the user to test, deploy, or "try again", ALWAYS run these checks. No exceptions.**
+
+## Systematic Checks
+
+### 1. DB State (ask user to run in browser console)
+
+```javascript
+const s = JSON.parse(localStorage.getItem("clawt-session"));
+const h = { Authorization: `Bearer ${s.token}` };
+const state = await fetch("/api/debug/agent-state", { headers: h }).then(r => r.json());
+console.log("DB state:", state);
+```
+
+**Expected**: `allAgents` has exactly 1 entry (the current agent), `current` is not null, `ghosts` shows terminated agents with appIds.
+
+### 2. Agent Detail (ask user to run in browser console)
+
+```javascript
+const info = await fetch("/api/agents/info", { headers: h }).then(r => r.json());
+console.log("Agent info:", info);
+```
+
+**Expected**: `walletAddressEth` and `instanceIp` are both non-null. If either is null, the agent hasn't phoned home yet.
+
+### 3. Vercel Heartbeat Logs (ask user to check)
+
+Filter for `heartbeat` in Vercel > Project > Logs. Check:
+- Is there a heartbeat with `appId=<current agent's appId>`? If yes → agent is alive.
+- Any heartbeats returning 404? → ghost containers on EigenCompute.
+- Any heartbeats with a wallet/appId NOT matching the current agent? → ghost.
+- Heartbeat interval should be ~5 minutes.
+
+### 4. Local Checks (run from terminal)
+
+```bash
+# Verify frontend is live
+curl -s -o /dev/null -w "%{http_code}" https://frontend-eight-dusky-51.vercel.app/api/auth/nonce
+
+# Verify Docker image is current
+docker images frsrventure/clawt-agent --format "{{.Repository}}:{{.Tag}} {{.CreatedAt}}"
+
+# Verify Docker Hub matches local
+curl -s https://hub.docker.com/v2/repositories/frsrventure/clawt-agent/tags/latest | python3 -c "import sys,json; d=json.load(sys.stdin); print('pushed:', d.get('tag_last_pushed','?'))"
+
+# Check no local test containers running
+docker ps --filter ancestor=frsrventure/clawt-agent:latest
+```
+
+### 5. Ghost Container Check
+
+Look at the `ghosts` array from step 1. Each ghost has an `appId`. These are DB-terminated but potentially still running on EigenCompute. The dashboard UI shows them with "On-chain Terminate" buttons. The user must click each one to sign a MetaMask tx.
+
+## Decision Tree
+
+```
+Is walletAddressEth null AND instanceIp null?
+├── YES → Agent hasn't phoned home
+│   ├── Check Vercel logs for ANY heartbeat from this agent's appId
+│   │   ├── No heartbeat at all → Container didn't boot. Wait 5-10 min for image pull.
+│   │   │                         If still nothing, terminate + redeploy.
+│   │   └── Heartbeat exists but didn't match → Check matching logic, check appId
+│   └── Check for ghost heartbeats from OLD wallets
+│       └── Ghosts present → Tell user to click "On-chain Terminate" for each ghost
+├── walletAddressEth set but instanceIp null → ipify failed inside TEE. Rare.
+└── Both set → Agent is online. Check /health endpoint.
+```
+
+## Common Failure Modes
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| New agent stays `walletAddressEth: null` | Container hasn't booted or heartbeat didn't match | Check Vercel logs for heartbeat entries |
+| Multiple `[heartbeat]` wallets in logs | Ghost containers alive on EigenCompute | User must on-chain terminate each ghost |
+| Deploy blocked "Agent already exists" | Old agent still `status: "running"` in DB | Register route auto-terminates now, but check |
+| Heartbeat returns 404 | Container alive but agent terminated in DB | On-chain terminate the ghost |
+| Heartbeat returns 409 | Multiple unbound agents, ambiguous fuzzy match | Ensure only 1 running agent with null wallet |
+
+## Never Skip This
+
+Even if the code looks correct, verify the runtime state. Do NOT tell the user "try now" until you have confirmed:
+1. Exactly 1 running agent in DB
+2. No ghost containers heartbeating in Vercel logs
+3. Frontend deployment is live with latest code
+4. Docker image is pushed if agent code changed

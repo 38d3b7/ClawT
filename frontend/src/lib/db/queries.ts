@@ -55,6 +55,19 @@ export async function getAgentById(id: number): Promise<Agent | null> {
   return rows[0] ?? null;
 }
 
+export async function terminateAllAgentsForUser(userAddress: string): Promise<number> {
+  const result = await getDb()
+    .update(agents)
+    .set({ status: "terminated", updatedAt: sql`datetime('now')` })
+    .where(
+      and(
+        eq(agents.userAddress, userAddress.toLowerCase()),
+        ne(agents.status, "terminated")
+      )
+    );
+  return result.rowsAffected ?? 0;
+}
+
 // ── Marketplace ──
 
 export type ListingPreview = Omit<Listing, "content" | "signature">;

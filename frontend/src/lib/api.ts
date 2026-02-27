@@ -100,6 +100,33 @@ export async function getAgentInfo(token: string): Promise<AgentInfo | null> {
   return res.json();
 }
 
+export interface StaleAgent {
+  id: number;
+  appId: string | null;
+  status: string;
+  name: string;
+  walletAddressEth: string | null;
+  instanceIp: string | null;
+  createdAt: string | null;
+}
+
+export async function getAllAgents(
+  token: string
+): Promise<{ current: AgentInfo | null; allAgents: StaleAgent[]; ghosts: StaleAgent[] }> {
+  const res = await fetch("/api/debug/agent-state", { headers: getHeaders(token) });
+  if (!res.ok) return { current: null, allAgents: [], ghosts: [] };
+  return res.json();
+}
+
+export async function terminateAgentById(token: string, agentId: number): Promise<void> {
+  const res = await fetch("/api/debug/agent-state", {
+    method: "POST",
+    headers: getHeaders(token),
+    body: JSON.stringify({ agentId, action: "terminate" }),
+  });
+  if (!res.ok) throw new Error("Failed to terminate agent in DB");
+}
+
 export async function registerAgent(
   token: string,
   data: {

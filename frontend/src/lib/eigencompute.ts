@@ -102,9 +102,11 @@ export async function deployAgent(
     salt,
   });
 
+  const fullEnvVars = { ...envVars, AGENT_APP_ID: appId };
+
   const keys = sdk.getKMSKeysForEnvironment(EIGEN_ENVIRONMENT, KMS_BUILD);
   const protectedHeaders = sdk.getAppProtectedHeaders(appId);
-  const plaintext = Buffer.from(JSON.stringify(envVars));
+  const plaintext = Buffer.from(JSON.stringify(fullEnvVars));
   const encryptedEnvStr = await sdk.encryptRSAOAEPAndAES256GCM(
     keys.encryptionKey,
     plaintext,
