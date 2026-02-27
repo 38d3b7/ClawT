@@ -58,7 +58,7 @@ export async function getAgentById(id: number): Promise<Agent | null> {
 export async function terminateAllAgentsForUser(userAddress: string): Promise<number> {
   const result = await getDb()
     .update(agents)
-    .set({ status: "terminated", updatedAt: sql`datetime('now')` })
+    .set({ status: "terminated", appId: null, updatedAt: sql`datetime('now')` })
     .where(
       and(
         eq(agents.userAddress, userAddress.toLowerCase()),
