@@ -366,11 +366,15 @@ async function registerWithBackend(): Promise<void> {
   const signature = await signMessage(message);
   const appId = process.env.AGENT_APP_ID;
 
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const bypassSecret = process.env.VERCEL_BYPASS_SECRET;
+  if (bypassSecret) headers["x-vercel-protection-bypass"] = bypassSecret;
+
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
       const res = await fetch(`${backendUrl}/api/agents/heartbeat-register`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ walletAddress, timestamp, signature, instanceIp, appId }),
       });
       if (res.ok) {

@@ -558,10 +558,17 @@ export default function Home() {
       const { generateMnemonic } = await import("@scure/bip39");
       const { wordlist } = await import("@scure/bip39/wordlists/english.js");
       const mnemonic = generateMnemonic(wordlist);
+      let bypassSecret = "";
+      try {
+        const bRes = await fetch("/api/eigen/bypass-secret", { headers: { Authorization: `Bearer ${token}` } });
+        if (bRes.ok) bypassSecret = (await bRes.json()).secret ?? "";
+      } catch { /* non-fatal */ }
+
       const envVars: Record<string, string> = {
         MNEMONIC: mnemonic,
         BACKEND_URL: window.location.origin,
         AGENT_SOUL: selectedSoul.content,
+        ...(bypassSecret && { VERCEL_BYPASS_SECRET: bypassSecret }),
       };
       if (grantCredentials) {
         envVars.EIGENAI_GRANT_MESSAGE = grantCredentials.message;
