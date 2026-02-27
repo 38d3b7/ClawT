@@ -127,6 +127,15 @@ export async function terminateAgentById(token: string, agentId: number): Promis
   if (!res.ok) throw new Error("Failed to terminate agent in DB");
 }
 
+export async function dismissGhosts(token: string, agentIds: number[]): Promise<void> {
+  const res = await fetch("/api/debug/agent-state", {
+    method: "POST",
+    headers: getHeaders(token),
+    body: JSON.stringify({ agentIds, action: "dismiss" }),
+  });
+  if (!res.ok) throw new Error("Failed to dismiss ghost agents");
+}
+
 export async function registerAgent(
   token: string,
   data: {
@@ -177,10 +186,27 @@ export async function submitTask(
   return res.json();
 }
 
+export interface BillingDetail {
+  active: boolean;
+  portalUrl?: string;
+  subscriptionStatus?: string;
+  currentPeriodStart?: string;
+  currentPeriodEnd?: string;
+  lineItems?: { description: string; price: number; quantity: number; currency: string; subtotal: number }[];
+  upcomingInvoiceSubtotal?: number;
+  upcomingInvoiceTotal?: number;
+  creditsApplied?: number;
+  remainingCredits?: number;
+  nextCreditExpiry?: number;
+  cancelAtPeriodEnd?: boolean;
+  canceledAt?: string;
+  error?: string;
+}
+
 export async function getBillingStatus(
   token: string,
   billingAuth: { signature: string; expiry: string; address: string }
-): Promise<{ active: boolean; portalUrl?: string; error?: string }> {
+): Promise<BillingDetail> {
   const res = await fetch("/api/eigen/billing", {
     method: "POST",
     headers: getHeaders(token),
@@ -195,10 +221,22 @@ export async function getBillingStatus(
   if (!res.ok) {
     return { active: false, error: data.error ?? `HTTP ${res.status}` };
   }
+  const active = data.active === true || data.subscriptionStatus === "active";
   return {
-    active: data.active === true || data.subscriptionStatus === "active",
+    active,
     portalUrl: data.portalUrl,
-    error: data.active ? undefined : data.debugInfo,
+    subscriptionStatus: data.subscriptionStatus,
+    currentPeriodStart: data.currentPeriodStart,
+    currentPeriodEnd: data.currentPeriodEnd,
+    lineItems: data.lineItems,
+    upcomingInvoiceSubtotal: data.upcomingInvoiceSubtotal,
+    upcomingInvoiceTotal: data.upcomingInvoiceTotal,
+    creditsApplied: data.creditsApplied,
+    remainingCredits: data.remainingCredits,
+    nextCreditExpiry: data.nextCreditExpiry,
+    cancelAtPeriodEnd: data.cancelAtPeriodEnd,
+    canceledAt: data.canceledAt,
+    error: active ? undefined : data.debugInfo,
   };
 }
 

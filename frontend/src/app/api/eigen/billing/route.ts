@@ -81,8 +81,16 @@ export async function POST(request: Request) {
       subscriptionStatus: sub.subscriptionStatus,
       active: isActive,
       portalUrl: sub.portalUrl,
+      currentPeriodStart: sub.currentPeriodStart,
       currentPeriodEnd: sub.currentPeriodEnd,
       lineItems: sub.lineItems,
+      upcomingInvoiceSubtotal: sub.upcomingInvoiceSubtotal,
+      upcomingInvoiceTotal: sub.upcomingInvoiceTotal,
+      creditsApplied: sub.creditsApplied,
+      remainingCredits: sub.remainingCredits,
+      nextCreditExpiry: sub.nextCreditExpiry,
+      cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+      canceledAt: sub.canceledAt,
       debugInfo: isActive
         ? undefined
         : `status=${sub.subscriptionStatus}, raw=${JSON.stringify(sub).slice(0, 300)}`,

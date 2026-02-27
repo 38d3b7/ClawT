@@ -25,6 +25,7 @@ import {
   getAgentEnv,
   getAllAgents,
   terminateAgentById,
+  dismissGhosts,
 } from "@/lib/api";
 import type {
   AgentInfo,
@@ -33,6 +34,7 @@ import type {
   PrincipleEntry,
   SkillInfo,
   StaleAgent,
+  BillingDetail,
 } from "@/lib/api";
 import { STARTER_SOULS } from "@/lib/souls";
 import type { Soul } from "@/lib/souls";
@@ -199,6 +201,12 @@ export default function Home() {
   const [staleAgents, setStaleAgents] = useState<StaleAgent[]>([]);
   const [ghostAgents, setGhostAgents] = useState<StaleAgent[]>([]);
   const [cleaningUpId, setCleaningUpId] = useState<number | null>(null);
+  const [eigenAccount, setEigenAccount] = useState<{
+    activeCount: number;
+    maxApps: number;
+    apps: { appId: string; status: number }[];
+  } | null>(null);
+  const [eigenAccountLoading, setEigenAccountLoading] = useState(false);
 
   const [dashTab, setDashTab] = useState<DashboardTab>("overview");
   const [health, setHealth] = useState<HealthData | null>(null);
@@ -215,12 +223,7 @@ export default function Home() {
   const [envSaving, setEnvSaving] = useState(false);
   const [envError, setEnvError] = useState("");
 
-  const [dashBilling, setDashBilling] = useState<{
-    active: boolean;
-    portalUrl?: string;
-    currentPeriodEnd?: string;
-    error?: string;
-  } | null>(null);
+  const [dashBilling, setDashBilling] = useState<BillingDetail | null>(null);
   const [dashBillingChecking, setDashBillingChecking] = useState(false);
 
   const SYSTEM_ENV_KEYS = new Set(["MNEMONIC", "BACKEND_URL", "PORT"]);
@@ -398,12 +401,7 @@ export default function Home() {
         setWalletClients(wc);
       }
       const auth = await signBillingAuth(wc.address, wc.walletClient);
-      const billing = await getBillingStatus(token, auth);
-      setDashBilling({
-        active: billing.active,
-        portalUrl: billing.portalUrl,
-        error: billing.active ? undefined : (billing.error ?? "No active subscription"),
-      });
+      setDashBilling(await getBillingStatus(token, auth));
     } catch (err) {
       setDashBilling({ active: false, error: err instanceof Error ? err.message : String(err) });
     } finally {
@@ -707,6 +705,40 @@ export default function Home() {
     }
   }
 
+  const STATUS_LABELS: Record<number, string> = { 0: "starting", 1: "running", 2: "stopped", 3: "terminated" };
+
+  async function fetchEigenAccount() {
+    setEigenAccountLoading(true);
+    try {
+      const sdk = await import("@layr-labs/ecloud-sdk/browser");
+      const { createClients } = await import("@/lib/eigencompute");
+      const { EIGEN_ENVIRONMENT } = await import("@/lib/network-config");
+      let clients = walletClients;
+      if (!clients) {
+        clients = await createClients();
+        setWalletClients(clients);
+      }
+      const envConfig = sdk.getEnvironmentConfig(EIGEN_ENVIRONMENT);
+      const [activeCount, maxApps, allApps] = await Promise.all([
+        sdk.getActiveAppCount(clients.publicClient, envConfig, clients.address),
+        sdk.getMaxActiveAppsPerUser(clients.publicClient, envConfig, clients.address),
+        sdk.getAllAppsByDeveloper(clients.publicClient, envConfig, clients.address),
+      ]);
+      setEigenAccount({
+        activeCount,
+        maxApps,
+        apps: allApps.apps.map((a, i) => ({
+          appId: a,
+          status: allApps.appConfigs[i].status,
+        })),
+      });
+    } catch (err) {
+      setError(`EigenCompute query failed: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setEigenAccountLoading(false);
+    }
+  }
+
   async function handleTerminateGhost(agent: StaleAgent) {
     if (!agent.appId) return;
     setCleaningUpId(agent.id);
@@ -719,10 +751,12 @@ export default function Home() {
         setWalletClients(clients);
       }
       await sendLifecycleTx(clients, "terminate", agent.appId as `0x${string}`);
+      try { await dismissGhosts(token, [agent.id]); } catch { /* best-effort DB cleanup */ }
       setGhostAgents((prev) => prev.filter((a) => a.id !== agent.id));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("already terminated") || msg.includes("revert")) {
+        try { await dismissGhosts(token, [agent.id]); } catch { /* best-effort */ }
         setGhostAgents((prev) => prev.filter((a) => a.id !== agent.id));
       } else {
         setError(`Ghost terminate failed: ${msg}`);
@@ -1172,9 +1206,21 @@ export default function Home() {
             {/* Ghost containers banner */}
             {ghostAgents.length > 0 && (
               <div className="rounded-lg border border-red-300 bg-red-50 p-4">
-                <h3 className="mb-1 text-sm font-semibold text-red-800">Ghost Containers on EigenCompute</h3>
+                <div className="mb-1 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-red-800">Ghost Containers ({ghostAgents.length})</h3>
+                  <button
+                    onClick={async () => {
+                      const ids = ghostAgents.map((g) => g.id);
+                      try { await dismissGhosts(token, ids); } catch { /* best-effort */ }
+                      setGhostAgents([]);
+                    }}
+                    className="text-xs text-red-600 underline transition-opacity hover:opacity-70"
+                  >
+                    Dismiss all
+                  </button>
+                </div>
                 <p className="mb-3 text-xs text-red-700">
-                  These agents are terminated in the database but may still be running on EigenCompute, consuming quota. Sign a MetaMask transaction to stop each one.
+                  Old agents terminated in the DB. Use &quot;On-chain Kill&quot; only if MetaMask does NOT show &quot;likely to fail&quot; -- that warning means the container is already dead. Dismiss dead ones.
                 </p>
                 <div className="space-y-2">
                   {ghostAgents.map((a) => (
@@ -1186,13 +1232,24 @@ export default function Home() {
                           <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">{a.appId}</p>
                         )}
                       </div>
-                      <button
-                        onClick={() => handleTerminateGhost(a)}
-                        disabled={cleaningUpId !== null}
-                        className="ml-3 shrink-0 rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                      >
-                        {cleaningUpId === a.id ? "Signing..." : "On-chain Terminate"}
-                      </button>
+                      <div className="ml-3 flex shrink-0 gap-2">
+                        <button
+                          onClick={async () => {
+                            try { await dismissGhosts(token, [a.id]); } catch { /* best-effort */ }
+                            setGhostAgents((prev) => prev.filter((g) => g.id !== a.id));
+                          }}
+                          className="rounded border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted"
+                        >
+                          Dismiss
+                        </button>
+                        <button
+                          onClick={() => handleTerminateGhost(a)}
+                          disabled={cleaningUpId !== null}
+                          className="rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                        >
+                          {cleaningUpId === a.id ? "Signing..." : "On-chain Kill"}
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1498,56 +1555,170 @@ export default function Home() {
             {/* ── Settings Tab ── */}
             {dashTab === "settings" && (
               <div className="space-y-6">
+                {/* ── EigenCompute Account ── */}
+                <div className="rounded-lg border border-border p-5">
+                  <div className="mb-3 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-medium">EigenCompute Account</h3>
+                      <p className="mt-0.5 text-xs text-muted-foreground">Your on-chain apps and quota.</p>
+                    </div>
+                    <button
+                      onClick={fetchEigenAccount}
+                      disabled={eigenAccountLoading}
+                      className="rounded border border-border px-3 py-1 text-xs transition-colors hover:bg-muted disabled:opacity-50"
+                    >
+                      {eigenAccountLoading ? "Loading\u2026" : eigenAccount ? "Refresh" : "Load"}
+                    </button>
+                  </div>
+                  {eigenAccount ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-4 text-sm">
+                        <span className="text-muted-foreground">Active apps:</span>
+                        <span className="font-medium">{eigenAccount.activeCount} / {eigenAccount.maxApps}</span>
+                      </div>
+                      {eigenAccount.apps.length > 0 && (
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="border-b text-left text-muted-foreground">
+                              <th className="pb-1 font-medium">App ID</th>
+                              <th className="pb-1 font-medium">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {eigenAccount.apps.map((a) => (
+                              <tr key={a.appId} className="border-b border-border/50">
+                                <td className="py-1.5 font-mono">{a.appId.slice(0, 10)}&hellip;{a.appId.slice(-6)}</td>
+                                <td className="py-1.5">
+                                  <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                    a.status === 1
+                                      ? "bg-green-100 text-green-700"
+                                      : a.status === 3
+                                        ? "bg-red-100 text-red-700"
+                                        : "bg-yellow-100 text-yellow-700"
+                                  }`}>
+                                    {STATUS_LABELS[a.status] ?? `unknown(${a.status})`}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  ) : !eigenAccountLoading ? (
+                    <p className="text-xs text-muted-foreground">Click <strong>Load</strong> to query your on-chain apps.</p>
+                  ) : null}
+                </div>
+
                 <div className="rounded-lg border border-border p-5">
                   <div className="mb-3 flex items-center justify-between">
                     <div>
                       <h3 className="text-sm font-medium">EigenCloud Billing</h3>
-                      <p className="mt-0.5 text-xs text-muted-foreground">Check your EigenCompute subscription status.</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">Subscription, credits, and upcoming invoice.</p>
                     </div>
-                    {dashBilling && dashBilling.active && dashBilling.portalUrl && (
-                      <a
-                        href={dashBilling.portalUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="rounded border border-border px-3 py-1 text-xs transition-colors hover:bg-muted"
+                    <div className="flex items-center gap-2">
+                      {dashBilling?.portalUrl && (
+                        <a
+                          href={dashBilling.portalUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded border border-border px-3 py-1 text-xs transition-colors hover:bg-muted"
+                        >
+                          Manage Billing
+                        </a>
+                      )}
+                      <button
+                        onClick={handleDashBillingCheck}
+                        disabled={dashBillingChecking}
+                        className="rounded border border-border px-3 py-1 text-xs transition-colors hover:bg-muted disabled:opacity-50"
                       >
-                        Manage Billing
-                      </a>
-                    )}
+                        {dashBillingChecking ? "Loading\u2026" : dashBilling ? "Refresh" : "Load"}
+                      </button>
+                    </div>
                   </div>
 
-                  {dashBillingChecking ? (
+                  {dashBilling ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        {dashBilling.active ? (
+                          <>
+                            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-green-100 text-green-600 text-xs">&#10003;</span>
+                            <span className="text-sm font-medium">
+                              {dashBilling.subscriptionStatus === "active" ? "Active" : (dashBilling.subscriptionStatus ?? "Active")}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-red-600 text-xs">&#10005;</span>
+                            <span className="text-sm text-muted-foreground">{dashBilling.error ?? `Status: ${dashBilling.subscriptionStatus ?? "inactive"}`}</span>
+                          </>
+                        )}
+                        {dashBilling.cancelAtPeriodEnd && (
+                          <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] font-medium text-yellow-700">Cancels at period end</span>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs sm:grid-cols-3">
+                        {dashBilling.currentPeriodEnd && (
+                          <div>
+                            <span className="text-muted-foreground">Period ends</span>
+                            <p className="font-medium">{new Date(dashBilling.currentPeriodEnd).toLocaleDateString()}</p>
+                          </div>
+                        )}
+                        {dashBilling.upcomingInvoiceTotal != null && (
+                          <div>
+                            <span className="text-muted-foreground">Upcoming invoice</span>
+                            <p className="font-medium">${(dashBilling.upcomingInvoiceTotal / 100).toFixed(2)}</p>
+                          </div>
+                        )}
+                        {dashBilling.remainingCredits != null && (
+                          <div>
+                            <span className="text-muted-foreground">Credits remaining</span>
+                            <p className="font-medium">${(dashBilling.remainingCredits / 100).toFixed(2)}</p>
+                          </div>
+                        )}
+                        {dashBilling.creditsApplied != null && dashBilling.creditsApplied > 0 && (
+                          <div>
+                            <span className="text-muted-foreground">Credits applied</span>
+                            <p className="font-medium">${(dashBilling.creditsApplied / 100).toFixed(2)}</p>
+                          </div>
+                        )}
+                        {dashBilling.nextCreditExpiry != null && (
+                          <div>
+                            <span className="text-muted-foreground">Credit expiry</span>
+                            <p className="font-medium">{new Date(dashBilling.nextCreditExpiry * 1000).toLocaleDateString()}</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {dashBilling.lineItems && dashBilling.lineItems.length > 0 && (
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="border-b text-left text-muted-foreground">
+                              <th className="pb-1 font-medium">Item</th>
+                              <th className="pb-1 text-right font-medium">Qty</th>
+                              <th className="pb-1 text-right font-medium">Subtotal</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dashBilling.lineItems.map((li, idx) => (
+                              <tr key={idx} className="border-b border-border/50">
+                                <td className="py-1.5">{li.description}</td>
+                                <td className="py-1.5 text-right">{li.quantity}</td>
+                                <td className="py-1.5 text-right">${(li.subtotal / 100).toFixed(2)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  ) : !dashBillingChecking ? (
+                    <p className="text-xs text-muted-foreground">Click <strong>Load</strong> to check your billing status.</p>
+                  ) : (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                       Checking subscription&hellip;
                     </div>
-                  ) : dashBilling ? (
-                    <div className="flex items-center gap-2">
-                      {dashBilling.active ? (
-                        <>
-                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-green-100 text-green-600 text-xs">&#10003;</span>
-                          <span className="text-sm">Subscription active</span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-red-600 text-xs">&#10005;</span>
-                          <span className="text-sm text-muted-foreground">{dashBilling.error ?? "No active subscription"}</span>
-                        </>
-                      )}
-                      <button
-                        onClick={handleDashBillingCheck}
-                        className="ml-auto rounded border border-border px-3 py-1 text-xs transition-colors hover:bg-muted"
-                      >
-                        Refresh
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={handleDashBillingCheck}
-                      className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
-                    >
-                      Check Billing
-                    </button>
                   )}
                 </div>
 

@@ -33,9 +33,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { agentId, action } = await request.json();
+  const { agentId, agentIds, action } = await request.json();
+
+  if (action === "dismiss") {
+    const db = await import("@/lib/db/client").then((m) => m.getDb());
+    const { agents: agentsTable } = await import("@/lib/db/schema");
+    const { eq, and, inArray } = await import("drizzle-orm");
+
+    const ids: number[] = agentIds ?? (typeof agentId === "number" ? [agentId] : []);
+    if (ids.length === 0) {
+      return NextResponse.json({ error: "Provide agentId or agentIds[]" }, { status: 400 });
+    }
+
+    await db
+      .update(agentsTable)
+      .set({ appId: null })
+      .where(and(eq(agentsTable.userAddress, address.toLowerCase()), inArray(agentsTable.id, ids)));
+
+    return NextResponse.json({ ok: true, dismissed: ids });
+  }
+
   if (action !== "terminate" || typeof agentId !== "number") {
-    return NextResponse.json({ error: "Only action=terminate with numeric agentId" }, { status: 400 });
+    return NextResponse.json({ error: "action must be 'terminate' or 'dismiss'" }, { status: 400 });
   }
 
   const db = await import("@/lib/db/client").then((m) => m.getDb());
