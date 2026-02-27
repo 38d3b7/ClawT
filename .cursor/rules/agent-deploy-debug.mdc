@@ -1,0 +1,90 @@
+# Agent Deploy Debugging
+
+## Architecture
+
+```
+Agent (EigenCompute TEE)          Frontend (Vercel)
+─────────────────────────         ──────────────────
+Container boots                   
+  → derives wallet from MNEMONIC  
+  → discoverPublicIp (ipify)     
+  → signs heartbeat message       
+  → POST /api/agents/heartbeat-register ──→ verify sig
+                                           fuzzy-match agent by status=running + no wallet
+                                           persist walletAddressEth + instanceIp
+                                  
+                                  Frontend polls GET /api/agents/info every 5s
+                                    → if instanceIp appears → "Online"
+                                    → if instanceIp null    → "Connecting..." spinner
+```
+
+## Known Fixes (already applied)
+
+- **Dockerfile**: `COPY shared/ /shared/` + `ENV NODE_PATH=/app/node_modules` -- fixes `ERR_MODULE_NOT_FOUND: Cannot find module '/shared/manifest.js'`
+- **Build context**: Dockerfile uses repo root as build context (COPY paths prefixed with `agent/`). Build with `docker build -f agent/Dockerfile .` from repo root.
+- **Port**: All proxy routes use port 3000 (was 3001). Agent listens on 3000.
+- **Heartbeat logging**: `[heartbeat]` prefix in `/api/agents/heartbeat-register/route.ts`, visible in Vercel Function Logs.
+
+## Dead Ends (do NOT pursue)
+
+- **ecloud CLI** (`ecloud compute app logs`): Requires the deploying wallet's private key, which is the user's MetaMask wallet. Cannot be used from a server or CI.
+- **EigenCompute REST API**: Returns 504 when called from Vercel serverless functions. CORS-blocked from the browser.
+- **In-memory ring buffers on Vercel**: Vercel functions are stateless -- each invocation is a cold/warm start with no shared memory. Use DB or Vercel Function Logs instead.
+- **Container log retrieval**: No accessible path to get TEE container stdout/stderr.
+
+## How to Diagnose a Deploy
+
+### 1. Check DB state from browser console
+
+```javascript
+fetch("/api/debug/agent-state", {
+  headers: { Authorization: `Bearer ${JSON.parse(localStorage.getItem("clawt-session")).token}` }
+}).then(r => r.json()).then(console.log)
+```
+
+- `walletAddressEth: null` + `instanceIp: null` → agent never phoned home (container didn't boot or can't reach Vercel)
+- `walletAddressEth: "0x..."` + `instanceIp: null` → heartbeat arrived but ipify failed in TEE
+- `walletAddressEth: "0x..."` + `instanceIp: "1.2.3.4"` → agent is online, check frontend display logic
+
+### 2. Check Vercel Function Logs
+
+Go to `vercel.com > project > Logs`, filter for `heartbeat`. Look for `[heartbeat]` entries showing:
+- `received` → heartbeat arrived
+- `signature valid` / `invalid signature` → auth check
+- `fuzzy matched agent id=X` → first-time wallet binding
+- `no fuzzy match` → no running agent with empty wallet (wrong DB state?)
+- `updated IP` → subsequent heartbeat with new IP
+- No entries at all → container never sent a heartbeat
+
+### 3. Test Docker image locally
+
+```bash
+docker run --rm --platform linux/amd64 \
+  -e MNEMONIC="abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about" \
+  -e BACKEND_URL="https://frontend-eight-dusky-51.vercel.app" \
+  frsrventure/clawt-agent:latest
+```
+
+Expected: `Agent listening on 0.0.0.0:3000`, `Wallet: 0x...`, `Registered with backend (IP: ...)`
+
+### 4. Rebuild and push image
+
+```bash
+docker build -f agent/Dockerfile -t frsrventure/clawt-agent:latest --platform linux/amd64 --no-cache .
+docker push frsrventure/clawt-agent:latest
+```
+
+Then terminate the old agent in the UI and redeploy. The deploy flow resolves the Docker Hub digest at deploy time.
+
+## Key Files
+
+| File | Role |
+|------|------|
+| `agent/Dockerfile` | Container image -- must include `COPY shared/ /shared/` |
+| `agent/src/index.ts` | Agent entry point, `registerWithBackend()`, heartbeat scheduler |
+| `agent/src/executor.ts` | Imports `../../shared/manifest.js` (resolves to `/shared/manifest.js`) |
+| `frontend/src/app/api/agents/heartbeat-register/route.ts` | Receives heartbeats, fuzzy-matches agent, persists wallet+IP |
+| `frontend/src/app/api/agents/info/route.ts` | Returns agent state + live health probe |
+| `frontend/src/app/api/debug/agent-state/route.ts` | Raw DB fields for debugging |
+| `frontend/src/lib/eigencompute.ts` | `deployAgent()` -- resolves image digest, encrypts env vars, deploys |
+| `frontend/src/lib/db/schema.ts` | Agents table schema |

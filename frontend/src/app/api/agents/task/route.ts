@@ -21,7 +21,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const agentRes = await fetch(`http://${agent.instanceIp}:3001/task`, {
+    const agentRes = await fetch(`http://${agent.instanceIp}:3000/task`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

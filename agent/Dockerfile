@@ -6,11 +6,14 @@ RUN apt-get update && apt-get install -y python3 python3-pip git curl && \
     pip3 install --break-system-packages requests openai && \
     rm -rf /var/lib/apt/lists/*
 
-COPY package.json tsconfig.json ./
+COPY agent/package.json agent/tsconfig.json ./
 RUN npm install
 
-COPY src/ ./src/
-COPY security-config.json ./security-config.json
+COPY agent/src/ ./src/
+COPY agent/security-config.json ./security-config.json
+COPY shared/ /shared/
+
+ENV NODE_PATH=/app/node_modules
 
 RUN mkdir -p /app/evolved-tools /app/evolved-skills
 
