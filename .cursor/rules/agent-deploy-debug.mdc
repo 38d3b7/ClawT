@@ -18,6 +18,18 @@
 - After the frontend is redeployed with the env var, the AGENT must also be redeployed (terminate + deploy from UI) so the deploy flow can fetch the bypass secret and inject it into agent env vars.
 - The sequence is: (1) redeploy frontend, (2) terminate old agent, (3) deploy new agent from the updated frontend.
 
+## MANDATORY Pre-Deploy Checklist
+
+**NEVER tell the user to deploy an agent without verifying ALL of these first:**
+
+1. **Frontend is deployed and live** -- confirm the Vercel deployment is Ready and recent (not stale).
+2. **Bypass secret is active** -- call `/api/eigen/bypass-secret` (via `vercel curl` or browser) and confirm it returns a non-empty `secret` field. If empty, the frontend was built before the bypass was configured and needs a redeploy.
+3. **Heartbeat endpoint is reachable** -- POST to `/api/agents/heartbeat-register` with the bypass header and confirm it returns JSON (not an HTML auth challenge). Example: `curl -X POST https://clawt-io.vercel.app/api/agents/heartbeat-register -H "x-vercel-protection-bypass: <secret>" -H "Content-Type: application/json" -d '{}' `-- should return `{"error":"Missing walletAddress..."}` not HTML.
+4. **Docker image is current** -- check `docker images frsrventure/clawt-agent` timestamp matches the latest code changes.
+5. **DB is clean** -- no ghost agents, current agent (if any) is terminated.
+
+**If any step fails, fix it before proceeding. Do NOT ask the user to deploy.**
+
 ## Vercel Project Situation
 
 There are TWO Vercel projects for the frontend:
