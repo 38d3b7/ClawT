@@ -11,13 +11,12 @@
 3. **API route** (`frontend/src/app/api/eigen/bypass-secret/route.ts`) returns `process.env.VERCEL_AUTOMATION_BYPASS_SECRET`.
 4. **Docker image** (`frsrventure/clawt-agent:latest`) is rebuilt with bypass header support.
 
-### What's missing:
+### Current state (Feb 27 2026):
 
-**Protection Bypass for Automation must be enabled on the ACTIVE Vercel project (`frsr/frontend`).** The bypass was previously configured on the old `service-5736s-projects/frontend` project, which is no longer receiving deployments. Without this, `VERCEL_AUTOMATION_BYPASS_SECRET` is empty in the deployment, so the agent sends no bypass header, and Vercel blocks the heartbeat.
-
-**To fix:** Go to Vercel → `frsr/frontend` → Settings → Deployment Protection → Protection Bypass for Automation → Enable. Then redeploy both frontend (`vercel --prod` or git push) AND the agent (terminate + redeploy from UI).
-
-**Alternative:** Disable Vercel Authentication entirely. But the bypass approach is better long-term.
+- Protection Bypass for Automation is ENABLED on `frsr/frontend` (secret named "clawt").
+- `VERCEL_AUTOMATION_BYPASS_SECRET` is baked into deployments at BUILD TIME. If the frontend was deployed before the bypass was added, it won't have the env var. **The frontend must be redeployed** after the bypass secret is configured.
+- After the frontend is redeployed with the env var, the AGENT must also be redeployed (terminate + deploy from UI) so the deploy flow can fetch the bypass secret and inject it into agent env vars.
+- The sequence is: (1) redeploy frontend, (2) terminate old agent, (3) deploy new agent from the updated frontend.
 
 ## Vercel Project Situation
 
