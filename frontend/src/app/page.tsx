@@ -38,6 +38,7 @@ import type {
 } from "@/lib/api";
 import { STARTER_SOULS } from "@/lib/souls";
 import type { Soul } from "@/lib/souls";
+import { EIGEN_ENVIRONMENT, switchNetwork, type EigenEnvironment } from "@/lib/network-config";
 import Link from "next/link";
 
 type View = "landing" | "setup" | "dashboard" | "loading";
@@ -55,6 +56,51 @@ const SOUL_ICONS: Record<string, string> = {
   shield: "M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z",
   code: "M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5",
 };
+
+function NetworkToggle({ compact }: { compact?: boolean }) {
+  const isMainnet = EIGEN_ENVIRONMENT === "mainnet-alpha";
+  const handleSwitch = (env: EigenEnvironment) => {
+    if (env !== EIGEN_ENVIRONMENT) switchNetwork(env);
+  };
+
+  if (compact) {
+    return (
+      <button
+        onClick={() => handleSwitch(isMainnet ? "sepolia" : "mainnet-alpha")}
+        className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[11px] font-medium transition-colors hover:bg-muted"
+        title="Switch network"
+      >
+        <span className={`h-1.5 w-1.5 rounded-full ${isMainnet ? "bg-green-500" : "bg-amber-500"}`} />
+        {isMainnet ? "Mainnet" : "Sepolia"}
+      </button>
+    );
+  }
+
+  return (
+    <div className="inline-flex rounded-lg border border-border p-0.5 text-sm">
+      <button
+        onClick={() => handleSwitch("sepolia")}
+        className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
+          !isMainnet
+            ? "bg-amber-100 text-amber-800"
+            : "text-muted-foreground hover:text-foreground"
+        }`}
+      >
+        Sepolia
+      </button>
+      <button
+        onClick={() => handleSwitch("mainnet-alpha")}
+        className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
+          isMainnet
+            ? "bg-green-100 text-green-800"
+            : "text-muted-foreground hover:text-foreground"
+        }`}
+      >
+        Mainnet
+      </button>
+    </div>
+  );
+}
 
 function timeAgo(ts: number): string {
   const seconds = Math.floor((Date.now() - ts) / 1000);
@@ -939,7 +985,10 @@ export default function Home() {
       <header className="border-b border-border px-6 py-4">
         <div className="mx-auto flex max-w-5xl items-center justify-between">
           <div className="flex items-center gap-6">
-            <h1 className="text-xl font-semibold tracking-tight">CLAWT</h1>
+            <div className="flex items-center gap-2.5">
+              <h1 className="text-xl font-semibold tracking-tight">CLAWT</h1>
+              <NetworkToggle compact />
+            </div>
             <nav className="flex gap-4 text-sm">
               <Link href="/skills" className="text-muted-foreground transition-colors hover:text-foreground">Skills</Link>
               <Link href="/souls" className="text-muted-foreground transition-colors hover:text-foreground">Souls</Link>
@@ -980,9 +1029,12 @@ export default function Home() {
               </svg>
             </div>
             <h2 className="mb-3 text-2xl font-semibold">Deploy Your Own AI Agent</h2>
-            <p className="mb-8 text-muted-foreground">
+            <p className="mb-6 text-muted-foreground">
               Sign in with your Ethereum wallet to deploy a verifiable, self-improving AI agent in a Trusted Execution Environment on EigenCompute.
             </p>
+            <div className="mb-6">
+              <NetworkToggle />
+            </div>
             {hasMetaMask() ? (
               <button onClick={handleConnect} disabled={loading} className="rounded-lg bg-primary px-8 py-3 font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50">
                 {loading ? "Connecting..." : "Connect Wallet"}

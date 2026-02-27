@@ -1,9 +1,19 @@
 import { sepolia, mainnet, base, baseSepolia } from "viem/chains";
 import type { Chain } from "viem";
 
-type EigenEnvironment = "sepolia" | "mainnet-alpha";
+export type EigenEnvironment = "sepolia" | "mainnet-alpha";
 
-const ENV = (process.env.NEXT_PUBLIC_EIGEN_ENVIRONMENT?.trim() ?? "sepolia") as EigenEnvironment;
+const STORAGE_KEY = "clawt-network";
+
+function resolveEnv(): EigenEnvironment {
+  if (typeof window !== "undefined") {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored === "sepolia" || stored === "mainnet-alpha") return stored;
+  }
+  return (process.env.NEXT_PUBLIC_EIGEN_ENVIRONMENT?.trim() ?? "sepolia") as EigenEnvironment;
+}
+
+const ENV = resolveEnv();
 const IS_MAINNET = ENV === "mainnet-alpha";
 
 export const EIGEN_ENVIRONMENT: EigenEnvironment = ENV;
@@ -45,3 +55,8 @@ export const MARKETPLACE_CHAIN_EXPLORER = IS_MAINNET
 export const USDC_ADDRESS = IS_MAINNET
   ? ("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as const)
   : ("0x036CbD53842c5426634e7929541eC2318f3dCF7e" as const);
+
+export function switchNetwork(env: EigenEnvironment) {
+  localStorage.setItem(STORAGE_KEY, env);
+  window.location.reload();
+}
