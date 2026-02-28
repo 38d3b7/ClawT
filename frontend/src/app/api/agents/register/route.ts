@@ -14,7 +14,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { name, appId, walletAddressEth, instanceIp } = await request.json();
+    const { name, appId, walletAddressEth, instanceIp, network } = await request.json();
     if (!name || !appId) {
       return NextResponse.json(
         { error: "Missing name or appId" },
@@ -22,15 +22,17 @@ export async function POST(request: Request) {
       );
     }
 
+    const agentNetwork = network === "mainnet" ? "mainnet" : "sepolia";
+
     await ensureUser(address);
 
-    const terminated = await terminateAllAgentsForUser(address);
+    const terminated = await terminateAllAgentsForUser(address, agentNetwork);
     if (terminated > 0) {
-      console.log(`[register] auto-terminated ${terminated} previous agent(s) for ${address.slice(0, 10)}`);
+      console.log(`[register] auto-terminated ${terminated} previous ${agentNetwork} agent(s) for ${address.slice(0, 10)}`);
     }
 
     const ecloudName = `clawt-${address.slice(2, 10)}`;
-    const agentId = await createAgent(address, name);
+    const agentId = await createAgent(address, name, agentNetwork);
     await updateAgent(agentId, {
       appId,
       ecloudName,

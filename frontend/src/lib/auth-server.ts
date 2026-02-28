@@ -56,3 +56,8 @@ export function getAuthAddress(request: Request): string | null {
   if (!authHeader?.startsWith("Bearer ")) return null;
   return verifySessionToken(authHeader.slice(7));
 }
+
+export function getRequestNetwork(request: Request): string {
+  const header = request.headers.get("x-clawt-network");
+  return header === "mainnet" ? "mainnet" : "sepolia";
+}

@@ -16,6 +16,7 @@ export const agents = sqliteTable("agents", {
   name: text("name").notNull(),
   walletAddressEth: text("wallet_address_eth"),
   instanceIp: text("instance_ip"),
+  network: text("network").default("sepolia").notNull(),
   status: text("status").default("deploying").notNull(),
   createdAt: text("created_at").default(sql`(datetime('now'))`),
   updatedAt: text("updated_at").default(sql`(datetime('now'))`),

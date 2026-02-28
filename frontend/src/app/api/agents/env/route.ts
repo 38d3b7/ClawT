@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAuthAddress } from "@/lib/auth-server";
+import { getAuthAddress, getRequestNetwork } from "@/lib/auth-server";
 import { getAgentByUser } from "@/lib/db/queries";
 
 export async function GET(request: Request) {
@@ -8,7 +8,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const agent = await getAgentByUser(address);
+  const agent = await getAgentByUser(address, getRequestNetwork(request));
   if (!agent?.instanceIp) {
     return NextResponse.json({ error: "Agent not reachable" }, { status: 502 });
   }

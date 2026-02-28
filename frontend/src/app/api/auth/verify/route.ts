@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { verifySiwe, createSessionToken } from "@/lib/auth-server";
+import { verifySiwe, createSessionToken, getRequestNetwork } from "@/lib/auth-server";
 import { ensureUser, getAgentByUser } from "@/lib/db/queries";
 
 export async function POST(request: Request) {
@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     await ensureUser(address);
 
     const token = createSessionToken(address);
-    const agent = await getAgentByUser(address);
+    const agent = await getAgentByUser(address, getRequestNetwork(request));
 
     return NextResponse.json({
       address,

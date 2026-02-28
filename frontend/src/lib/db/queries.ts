@@ -12,11 +12,12 @@ export async function ensureUser(address: string): Promise<void> {
 
 export async function createAgent(
   userAddress: string,
-  name: string
+  name: string,
+  network: string = "sepolia"
 ): Promise<number> {
   const result = await getDb()
     .insert(agents)
-    .values({ userAddress: userAddress.toLowerCase(), name })
+    .values({ userAddress: userAddress.toLowerCase(), name, network })
     .returning({ id: agents.id });
   return result[0].id;
 }
@@ -34,17 +35,18 @@ export async function updateAgent(
 }
 
 export async function getAgentByUser(
-  userAddress: string
+  userAddress: string,
+  network?: string
 ): Promise<Agent | null> {
+  const conditions = [
+    eq(agents.userAddress, userAddress.toLowerCase()),
+    ne(agents.status, "terminated"),
+  ];
+  if (network) conditions.push(eq(agents.network, network));
   const rows = await getDb()
     .select()
     .from(agents)
-    .where(
-      and(
-        eq(agents.userAddress, userAddress.toLowerCase()),
-        ne(agents.status, "terminated")
-      )
-    )
+    .where(and(...conditions))
     .orderBy(desc(agents.id))
     .limit(1);
   return rows[0] ?? null;
@@ -55,22 +57,25 @@ export async function getAgentById(id: number): Promise<Agent | null> {
   return rows[0] ?? null;
 }
 
-export async function terminateAllAgentsForUser(userAddress: string): Promise<number> {
+export async function terminateAllAgentsForUser(userAddress: string, network?: string): Promise<number> {
+  const conditions = [
+    eq(agents.userAddress, userAddress.toLowerCase()),
+    ne(agents.status, "terminated"),
+  ];
+  if (network) conditions.push(eq(agents.network, network));
   const result = await getDb()
     .update(agents)
     .set({ status: "terminated", updatedAt: sql`datetime('now')` })
-    .where(
-      and(
-        eq(agents.userAddress, userAddress.toLowerCase()),
-        ne(agents.status, "terminated")
-      )
-    );
+    .where(and(...conditions));
   return result.rowsAffected ?? 0;
 }
 
 export async function getAllAgentsForUser(
-  userAddress: string
+  userAddress: string,
+  network?: string
 ): Promise<Pick<Agent, "appId" | "name" | "ecloudName" | "status">[]> {
+  const conditions = [eq(agents.userAddress, userAddress.toLowerCase())];
+  if (network) conditions.push(eq(agents.network, network));
   return getDb()
     .select({
       appId: agents.appId,
@@ -79,7 +84,7 @@ export async function getAllAgentsForUser(
       status: agents.status,
     })
     .from(agents)
-    .where(eq(agents.userAddress, userAddress.toLowerCase()))
+    .where(and(...conditions))
     .orderBy(desc(agents.id));
 }
 

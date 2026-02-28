@@ -74,9 +74,15 @@ export interface SkillInfo {
 }
 
 function getHeaders(token: string): HeadersInit {
+  let network = "sepolia";
+  try {
+    const stored = localStorage.getItem("clawt-network");
+    if (stored === "mainnet-alpha") network = "mainnet";
+  } catch { /* SSR-safe */ }
   return {
     "Content-Type": "application/json",
     Authorization: `Bearer ${token}`,
+    "X-Clawt-Network": network,
   };
 }
 
@@ -143,6 +149,7 @@ export async function registerAgent(
     appId: string;
     walletAddressEth?: string;
     instanceIp?: string;
+    network?: string;
   }
 ): Promise<{ agentId: number; appId: string }> {
   const res = await fetch("/api/agents/register", {

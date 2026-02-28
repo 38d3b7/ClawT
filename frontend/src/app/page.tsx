@@ -635,9 +635,11 @@ export default function Home() {
       }
       const ecloudName = `clawt-${address.slice(2, 10).toLowerCase()}`;
       const deployResult = await deployAgent(clients, envVars, { name: ecloudName, token });
+      const { EIGEN_ENVIRONMENT: env } = await import("@/lib/network-config");
       await registerAgent(token, {
         name: agentName,
         appId: deployResult.appId,
+        network: env === "mainnet-alpha" ? "mainnet" : "sepolia",
       });
 
       setDeployPhase("idle");

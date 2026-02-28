@@ -18,8 +18,6 @@ import {
   EIGEN_CHAIN,
   EIGEN_CHAIN_HEX,
   EIGEN_CHAIN_NAME,
-  EIGEN_CHAIN_RPC,
-  EIGEN_CHAIN_EXPLORER,
   MARKETPLACE_CHAIN,
   MARKETPLACE_CHAIN_HEX,
   MARKETPLACE_CHAIN_NAME,
@@ -64,28 +62,13 @@ async function resolveWalletClients() {
   if (!accounts?.[0]) throw new Error("No accounts returned");
   const address = getAddress(accounts[0]);
 
-  try {
-    await window.ethereum.request({
-      method: "wallet_switchEthereumChain",
-      params: [{ chainId: EIGEN_CHAIN_HEX }],
-    });
-  } catch (err: unknown) {
-    if ((err as { code?: number }).code === 4902) {
-      await window.ethereum.request({
-        method: "wallet_addEthereumChain",
-        params: [
-          {
-            chainId: EIGEN_CHAIN_HEX,
-            chainName: EIGEN_CHAIN_NAME,
-            nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
-            rpcUrls: [EIGEN_CHAIN_RPC],
-            blockExplorerUrls: [EIGEN_CHAIN_EXPLORER],
-          },
-        ],
-      });
-    } else {
-      throw new Error(`Please switch to ${EIGEN_CHAIN_NAME} to continue`);
-    }
+  const chainId = (await window.ethereum.request({ method: "eth_chainId" })) as string;
+  if (chainId.toLowerCase() !== EIGEN_CHAIN_HEX.toLowerCase()) {
+    const names: Record<string, string> = { "0x1": "Ethereum Mainnet", "0xaa36a7": "Sepolia" };
+    const current = names[chainId.toLowerCase()] ?? `chain ${chainId}`;
+    throw new Error(
+      `MetaMask is on ${current} but CLAWT is set to ${EIGEN_CHAIN_NAME}. Please switch MetaMask to ${EIGEN_CHAIN_NAME}, or change the network toggle.`
+    );
   }
 
   const walletClient = createWalletClient({

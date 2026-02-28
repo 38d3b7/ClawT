@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAuthAddress } from "@/lib/auth-server";
+import { getAuthAddress, getRequestNetwork } from "@/lib/auth-server";
 import { getAgentByUser, updateAgent } from "@/lib/db/queries";
 
 export async function GET(request: Request) {
@@ -18,7 +18,7 @@ export async function GET(request: Request) {
     .where(eq(agentsTable.userAddress, address.toLowerCase()));
 
   const active = allRows.filter((a) => a.status !== "terminated");
-  const current = await getAgentByUser(address);
+  const current = await getAgentByUser(address, getRequestNetwork(request));
 
   const ghosts = allRows.filter(
     (a) => a.status === "terminated" && a.appId && a.appId !== current?.appId
