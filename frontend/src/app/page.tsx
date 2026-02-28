@@ -663,7 +663,11 @@ export default function Home() {
           setWalletClients(clients);
         }
         if (agentInfo?.appId) {
-          await sendLifecycleTx(clients, "terminate", agentInfo.appId as `0x${string}`);
+          try {
+            await sendLifecycleTx(clients, "terminate", agentInfo.appId as `0x${string}`);
+          } catch {
+            // On-chain app may already be terminated -- proceed with DB cleanup
+          }
         }
         await updateAgentStatus(token, { status: "terminated" });
         setAgentInfo(null);
