@@ -24,21 +24,7 @@ export async function GET(request: Request) {
     (a) => a.status === "terminated" && a.appId && a.appId !== current?.appId
   );
 
-  if (ghosts.length > 0) {
-    const { isNotNull, and: andOp } = await import("drizzle-orm");
-    await db
-      .update(agentsTable)
-      .set({ appId: null })
-      .where(
-        andOp(
-          eq(agentsTable.userAddress, address.toLowerCase()),
-          eq(agentsTable.status, "terminated"),
-          isNotNull(agentsTable.appId)
-        )
-      );
-  }
-
-  return NextResponse.json({ current, allAgents: active, ghosts: [], total: allRows.length });
+  return NextResponse.json({ current, allAgents: active, ghosts, total: allRows.length });
 }
 
 export async function POST(request: Request) {

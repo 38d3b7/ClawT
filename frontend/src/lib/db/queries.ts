@@ -58,7 +58,7 @@ export async function getAgentById(id: number): Promise<Agent | null> {
 export async function terminateAllAgentsForUser(userAddress: string): Promise<number> {
   const result = await getDb()
     .update(agents)
-    .set({ status: "terminated", appId: null, updatedAt: sql`datetime('now')` })
+    .set({ status: "terminated", updatedAt: sql`datetime('now')` })
     .where(
       and(
         eq(agents.userAddress, userAddress.toLowerCase()),
@@ -66,6 +66,21 @@ export async function terminateAllAgentsForUser(userAddress: string): Promise<nu
       )
     );
   return result.rowsAffected ?? 0;
+}
+
+export async function getAllAgentsForUser(
+  userAddress: string
+): Promise<Pick<Agent, "appId" | "name" | "ecloudName" | "status">[]> {
+  return getDb()
+    .select({
+      appId: agents.appId,
+      name: agents.name,
+      ecloudName: agents.ecloudName,
+      status: agents.status,
+    })
+    .from(agents)
+    .where(eq(agents.userAddress, userAddress.toLowerCase()))
+    .orderBy(desc(agents.id));
 }
 
 // ── Marketplace ──

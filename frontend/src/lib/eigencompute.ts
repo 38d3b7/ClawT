@@ -122,14 +122,15 @@ export async function deployAgent(
     salt,
   });
 
-  const fullEnvVars = { ...envVars, AGENT_APP_ID: appId };
+  const publicVars: Record<string, string> = { AGENT_APP_ID: appId };
+  const encryptedVars = { ...envVars };
 
   const keys = sdk.getKMSKeysForEnvironment(EIGEN_ENVIRONMENT, KMS_BUILD);
   const protectedHeaders = sdk.getAppProtectedHeaders(appId);
-  const plaintext = Buffer.from(JSON.stringify(fullEnvVars));
+  const encryptedPlaintext = Buffer.from(JSON.stringify(encryptedVars));
   const encryptedEnvStr = await sdk.encryptRSAOAEPAndAES256GCM(
     keys.encryptionKey,
-    plaintext,
+    encryptedPlaintext,
     protectedHeaders
   );
 
@@ -138,7 +139,7 @@ export async function deployAgent(
       artifacts: [{ digest: digestBytes, registry }],
       upgradeByTime: Math.floor(Date.now() / 1000) + 3600,
     },
-    publicEnv: new Uint8Array(Buffer.from(JSON.stringify({}))),
+    publicEnv: new Uint8Array(Buffer.from(JSON.stringify(publicVars))),
     encryptedEnv: new Uint8Array(Buffer.from(encryptedEnvStr)),
   };
 

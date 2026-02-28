@@ -252,7 +252,18 @@ export default function Home() {
     apps: { appId: string; status: number }[];
   } | null>(null);
   const [eigenAccountLoading, setEigenAccountLoading] = useState(false);
+  const [appNameMap, setAppNameMap] = useState<Record<string, string>>({});
+  const [showTerminated, setShowTerminated] = useState(false);
   const [terminatingAppId, setTerminatingAppId] = useState<string | null>(null);
+  const [deployDiag, setDeployDiag] = useState<{
+    status?: string;
+    ip?: string;
+    derivedWallet?: string;
+    machineType?: string;
+    contractStatus?: string;
+    error?: string;
+  } | null>(null);
+  const [deployDiagLoading, setDeployDiagLoading] = useState(false);
 
   const [dashTab, setDashTab] = useState<DashboardTab>("overview");
   const [health, setHealth] = useState<HealthData | null>(null);
@@ -272,7 +283,7 @@ export default function Home() {
   const [dashBilling, setDashBilling] = useState<BillingDetail | null>(null);
   const [dashBillingChecking, setDashBillingChecking] = useState(false);
 
-  const SYSTEM_ENV_KEYS = new Set(["MNEMONIC", "BACKEND_URL", "PORT"]);
+  const SYSTEM_ENV_KEYS = new Set(["BACKEND_URL", "PORT"]);
 
   const envDirty =
     JSON.stringify(Object.keys(envDraft).sort().reduce((a, k) => ({ ...a, [k]: envDraft[k] }), {})) !==
@@ -589,6 +600,13 @@ export default function Home() {
 
   async function handleDeploy() {
     try {
+      const { EIGEN_ENVIRONMENT } = await import("@/lib/network-config");
+      if (EIGEN_ENVIRONMENT === "mainnet-alpha") {
+        const ok = window.confirm(
+          "You are deploying to Ethereum Mainnet.\n\nThis will cost real ETH for gas. Continue?"
+        );
+        if (!ok) return;
+      }
       setError("");
       setLoading(true);
       setDeployPhase("tx-pending");
@@ -599,9 +617,6 @@ export default function Home() {
         clients = await ec.createClients();
         setWalletClients(clients);
       }
-      const { generateMnemonic } = await import("@scure/bip39");
-      const { wordlist } = await import("@scure/bip39/wordlists/english.js");
-      const mnemonic = generateMnemonic(wordlist);
       let bypassSecret = "";
       try {
         const bRes = await fetch("/api/eigen/bypass-secret", { headers: { Authorization: `Bearer ${token}` } });
@@ -609,7 +624,6 @@ export default function Home() {
       } catch { /* non-fatal */ }
 
       const envVars: Record<string, string> = {
-        MNEMONIC: mnemonic,
         BACKEND_URL: window.location.origin,
         AGENT_SOUL: selectedSoul.content,
         ...(bypassSecret && { VERCEL_BYPASS_SECRET: bypassSecret }),
@@ -742,11 +756,17 @@ export default function Home() {
         setWalletClients(clients);
       }
       const envConfig = sdk.getEnvironmentConfig(EIGEN_ENVIRONMENT);
-      const [activeCount, maxApps, allApps] = await Promise.all([
+      const [activeCount, maxApps, allApps, namesRes] = await Promise.all([
         sdk.getActiveAppCount(clients.publicClient, envConfig, clients.address),
         sdk.getMaxActiveAppsPerUser(clients.publicClient, envConfig, clients.address),
         sdk.getAllAppsByDeveloper(clients.publicClient, envConfig, clients.address),
+        token
+          ? fetch("/api/agents/app-names", { headers: { Authorization: `Bearer ${token}` } })
+              .then((r) => (r.ok ? r.json() : { nameMap: {} }))
+              .catch(() => ({ nameMap: {} }))
+          : Promise.resolve({ nameMap: {} }),
       ]);
+      setAppNameMap(namesRes.nameMap ?? {});
       setEigenAccount({
         activeCount,
         maxApps,
@@ -759,6 +779,32 @@ export default function Home() {
       setError(`EigenCompute query failed: ${err instanceof Error ? err.message : err}`);
     } finally {
       setEigenAccountLoading(false);
+    }
+  }
+
+  async function fetchDeployDiag() {
+    if (!agentInfo?.appId || !token) return;
+    setDeployDiagLoading(true);
+    setDeployDiag(null);
+    try {
+      const res = await fetch(
+        `/api/debug/eigen-status?appId=${encodeURIComponent(agentInfo.appId)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setDeployDiag({
+        status: data.teeStatus,
+        ip: data.teeIp && data.teeIp !== "REDACTED" ? data.teeIp : undefined,
+        derivedWallet: data.derivedWallet,
+        machineType: data.machineType,
+        contractStatus: data.contractStatus,
+        error: data.infoError,
+      });
+    } catch (err) {
+      setDeployDiag({ error: `Failed: ${err instanceof Error ? err.message : err}` });
+    } finally {
+      setDeployDiagLoading(false);
     }
   }
 
@@ -1022,7 +1068,7 @@ export default function Home() {
         {view === "setup" && setupStep === 1 && (
           <div className="mx-auto max-w-lg pt-10">
             <h2 className="mb-1 text-xl font-semibold">Pre-Deploy Checks</h2>
-            <p className="mb-6 text-sm text-muted-foreground">Verify EigenCloud billing and EigenAI grant before deploying.</p>
+            <p className="mb-6 text-sm text-muted-foreground">Verify EigenCloud billing before deploying. EigenAI grant is optional.</p>
 
             {staleAgents.length > 0 && (
               <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-5">
@@ -1095,7 +1141,7 @@ export default function Home() {
                   ) : (
                     <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-red-600 text-xs">&#10005;</span>
                   )}
-                  <h3 className="text-sm font-medium">EigenAI Grant</h3>
+                  <h3 className="text-sm font-medium">EigenAI Grant <span className="text-xs font-normal text-muted-foreground">(optional)</span></h3>
                 </div>
                 {grantCredentials ? (
                   <div className="ml-7 text-sm text-muted-foreground">Grant authorized{grantStatus.tokenCount > 0 ? ` (${grantStatus.tokenCount.toLocaleString()} tokens)` : ""}</div>
@@ -1108,7 +1154,7 @@ export default function Home() {
                   </div>
                 ) : (
                   <div className="ml-7 text-sm text-muted-foreground">
-                    <p>No EigenAI grant found. <a href="https://determinal.eigenarcade.com/" target="_blank" rel="noreferrer" className="text-primary underline">Get one at EigenArcade</a>.</p>
+                    <p>No grant found. You can deploy without one &mdash; task processing will be unavailable until a grant is added. <a href="https://determinal.eigenarcade.com/" target="_blank" rel="noreferrer" className="text-primary underline">Get one at EigenArcade</a>.</p>
                   </div>
                 )}
               </div>
@@ -1117,8 +1163,8 @@ export default function Home() {
               <button onClick={() => runPreflightChecks(address, walletClients?.walletClient, token)} disabled={checkingPreflight} className="rounded-lg border border-border px-4 py-2.5 text-sm transition-colors hover:bg-muted disabled:opacity-50">
                 {checkingPreflight ? "Checking..." : "Check Again"}
               </button>
-              <button onClick={() => { setSetupStep(2); fetchPurchasedSouls(); }} disabled={!billingActive || !grantCredentials} className="flex-1 rounded-lg bg-primary px-6 py-2.5 font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50">
-                Continue
+              <button onClick={() => { setSetupStep(2); fetchPurchasedSouls(); }} disabled={!billingActive} className="flex-1 rounded-lg bg-primary px-6 py-2.5 font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50">
+                Continue{!grantCredentials && billingActive ? " (without grant)" : ""}
               </button>
             </div>
           </div>
@@ -1301,24 +1347,6 @@ export default function Home() {
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
-            {/* IP resolution banner */}
-            {agentStatus === "running" && !agentInfo?.instanceIp && (
-              <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
-                    <span>Connecting to agent...</span>
-                  </div>
-                  <button
-                    onClick={() => checkAgent(token)}
-                    className="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white transition-opacity hover:opacity-90"
-                  >
-                    Refresh
-                  </button>
-                </div>
-                <p className="mt-1 text-xs text-blue-600">Your agent is deployed but its IP hasn&apos;t been resolved yet. This will resolve automatically.</p>
               </div>
             )}
 
@@ -1642,62 +1670,152 @@ export default function Home() {
                           </button>
                         )}
                       </div>
-                      {eigenAccount.apps.length > 0 && (
-                        <table className="w-full text-xs">
-                          <thead>
-                            <tr className="border-b text-left text-muted-foreground">
-                              <th className="pb-1 font-medium">App ID</th>
-                              <th className="pb-1 font-medium">Status</th>
-                              <th className="pb-1 font-medium">Action</th>
+                      {eigenAccount.apps.length > 0 && (() => {
+                        const activeApps = eigenAccount.apps.filter((a) => a.status !== 3);
+                        const terminatedApps = eigenAccount.apps.filter((a) => a.status === 3);
+                        const renderRow = (a: { appId: string; status: number }) => {
+                          const isCurrentAgent = agentInfo?.appId === a.appId;
+                          const canTerminate = (a.status === 1 || a.status === 2) && !isCurrentAgent;
+                          const name = appNameMap[a.appId.toLowerCase()];
+                          return (
+                            <tr key={a.appId} className="border-b border-border/50">
+                              <td className="py-1.5">
+                                {name && (
+                                  <span className="block text-xs font-medium">{name}</span>
+                                )}
+                                <span className={`block font-mono ${name ? "text-[10px] text-muted-foreground" : ""}`}>
+                                  {a.appId.slice(0, 10)}&hellip;{a.appId.slice(-6)}
+                                </span>
+                                {isCurrentAgent && (
+                                  <span className="ml-1.5 inline-block rounded bg-blue-100 px-1.5 py-0.5 text-[9px] font-medium text-blue-700">current</span>
+                                )}
+                              </td>
+                              <td className="py-1.5">
+                                <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                  a.status === 1
+                                    ? "bg-green-100 text-green-700"
+                                    : a.status === 3
+                                      ? "bg-red-100 text-red-700"
+                                      : "bg-yellow-100 text-yellow-700"
+                                }`}>
+                                  {STATUS_LABELS[a.status] ?? `unknown(${a.status})`}
+                                </span>
+                              </td>
+                              <td className="py-1.5">
+                                {canTerminate ? (
+                                  <button
+                                    onClick={() => handleTerminateOnChain(a.appId)}
+                                    disabled={terminatingAppId === a.appId}
+                                    className="rounded bg-red-600 px-2 py-0.5 text-[10px] font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                                  >
+                                    {terminatingAppId === a.appId ? "Terminating\u2026" : "Terminate"}
+                                  </button>
+                                ) : a.status === 3 ? (
+                                  <span className="text-[10px] text-muted-foreground">terminated</span>
+                                ) : null}
+                              </td>
                             </tr>
-                          </thead>
-                          <tbody>
-                            {eigenAccount.apps.map((a) => {
-                              const isCurrentAgent = agentInfo?.appId === a.appId;
-                              const canTerminate = (a.status === 1 || a.status === 2) && !isCurrentAgent;
-                              return (
-                                <tr key={a.appId} className="border-b border-border/50">
-                                  <td className="py-1.5 font-mono">
-                                    {a.appId.slice(0, 10)}&hellip;{a.appId.slice(-6)}
-                                    {isCurrentAgent && (
-                                      <span className="ml-1.5 rounded bg-blue-100 px-1.5 py-0.5 text-[9px] font-medium text-blue-700">current</span>
-                                    )}
-                                  </td>
-                                  <td className="py-1.5">
-                                    <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                                      a.status === 1
-                                        ? "bg-green-100 text-green-700"
-                                        : a.status === 3
-                                          ? "bg-red-100 text-red-700"
-                                          : "bg-yellow-100 text-yellow-700"
-                                    }`}>
-                                      {STATUS_LABELS[a.status] ?? `unknown(${a.status})`}
-                                    </span>
-                                  </td>
-                                  <td className="py-1.5">
-                                    {canTerminate ? (
-                                      <button
-                                        onClick={() => handleTerminateOnChain(a.appId)}
-                                        disabled={terminatingAppId === a.appId}
-                                        className="rounded bg-red-600 px-2 py-0.5 text-[10px] font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
-                                      >
-                                        {terminatingAppId === a.appId ? "Terminating\u2026" : "Terminate"}
-                                      </button>
-                                    ) : a.status === 3 ? (
-                                      <span className="text-[10px] text-muted-foreground">terminated</span>
-                                    ) : null}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      )}
+                          );
+                        };
+                        return (
+                          <>
+                            {activeApps.length > 0 && (
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="border-b text-left text-muted-foreground">
+                                    <th className="pb-1 font-medium">App</th>
+                                    <th className="pb-1 font-medium">Status</th>
+                                    <th className="pb-1 font-medium">Action</th>
+                                  </tr>
+                                </thead>
+                                <tbody>{activeApps.map(renderRow)}</tbody>
+                              </table>
+                            )}
+                            {terminatedApps.length > 0 && (
+                              <div>
+                                <button
+                                  onClick={() => setShowTerminated((p) => !p)}
+                                  className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                                >
+                                  <span className="inline-block transition-transform" style={{ transform: showTerminated ? "rotate(90deg)" : "rotate(0deg)" }}>&rsaquo;</span>
+                                  {terminatedApps.length} terminated app{terminatedApps.length !== 1 ? "s" : ""}
+                                </button>
+                                {showTerminated && (
+                                  <table className="mt-1 w-full text-xs">
+                                    <thead>
+                                      <tr className="border-b text-left text-muted-foreground">
+                                        <th className="pb-1 font-medium">App</th>
+                                        <th className="pb-1 font-medium">Status</th>
+                                        <th className="pb-1 font-medium">Action</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>{terminatedApps.map(renderRow)}</tbody>
+                                  </table>
+                                )}
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   ) : !eigenAccountLoading ? (
                     <p className="text-xs text-muted-foreground">Click <strong>Load</strong> to query your on-chain apps.</p>
                   ) : null}
                 </div>
+
+                {/* ── Deployment Diagnostics ── */}
+                {agentInfo?.appId && (
+                  <div className="rounded-lg border border-border p-5">
+                    <div className="mb-3 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-medium">Deployment Diagnostics</h3>
+                        <p className="mt-0.5 text-xs text-muted-foreground">Query EigenCompute for container status and logs.</p>
+                      </div>
+                      <button
+                        onClick={fetchDeployDiag}
+                        disabled={deployDiagLoading}
+                        className="rounded border border-border px-3 py-1 text-xs transition-colors hover:bg-muted disabled:opacity-50"
+                      >
+                        {deployDiagLoading ? "Checking\u2026" : deployDiag ? "Re-check" : "Check"}
+                      </button>
+                    </div>
+                    {deployDiag && (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs sm:grid-cols-3">
+                          <div>
+                            <span className="text-muted-foreground">TEE status: </span>
+                            <span className={`font-medium ${deployDiag.status === "Running" ? "text-green-600" : deployDiag.status === "Terminated" ? "text-red-600" : deployDiag.status ? "text-yellow-600" : "text-muted-foreground"}`}>
+                              {deployDiag.status ?? "unknown"}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">TEE IP: </span>
+                            <span className="font-mono font-medium">{deployDiag.ip ?? "redacted"}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Machine: </span>
+                            <span className="font-medium">{deployDiag.machineType ?? "unknown"}</span>
+                          </div>
+                          {deployDiag.derivedWallet && (
+                            <div className="col-span-2 sm:col-span-3">
+                              <span className="text-muted-foreground">TEE wallet: </span>
+                              <span className="font-mono font-medium">{deployDiag.derivedWallet}</span>
+                            </div>
+                          )}
+                        </div>
+                        {deployDiag.status === "Running" && !agentInfo?.walletAddressEth && (
+                          <div className="rounded bg-yellow-50 p-2 text-xs text-yellow-800">
+                            Container is running on EigenCompute but has not sent a heartbeat.
+                            Likely cause: BACKEND_URL env var not decrypted, DNS resolution failure, or outbound HTTP blocked inside TEE.
+                          </div>
+                        )}
+                        {deployDiag.error && (
+                          <div className="rounded bg-red-50 p-2 text-xs text-red-700">{deployDiag.error}</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="rounded-lg border border-border p-5">
                   <div className="mb-3 flex items-center justify-between">
